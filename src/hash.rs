@@ -256,16 +256,32 @@ mod tests {
         let msg = vec![
             Fr::from_str_vartime("1").unwrap(),
             Fr::from_str_vartime("2").unwrap(),
-            Fr::from_str_vartime("3").unwrap(),
+            Fr::from_str_vartime("50331648").unwrap(), //0x3000000
         ];
 
-        let supposed_bytes = 22;
+        let supposed_bytes = 45;
 
         let h = hasher.hash_with_cap(&msg, supposed_bytes);
         assert_eq!(
             h.to_string(),
-            "0x115cc0f5e7d690413df64c6b9662e9cf2a3617f2743245519e19607a4417189a" // "7853200120776062878684798364095072458815029376092732009249414926327459813530"
+            "0x212b546f9c67c4fdcba131035644aa1d8baa8943f84b0a27e8f65b5bd532213e"
         );
+
+        let hasher = PoseidonBytes::init();
+        let msg = vec![
+            Fr::from_str_vartime("1").unwrap(),
+            Fr::from_str_vartime("2").unwrap(),
+            Fr::from_str_vartime("3").unwrap(),
+            Fr::zero(),
+        ];
+
+        let supposed_bytes = 50;
+
+        let h = hasher.hash_with_cap(&msg, supposed_bytes);
+        assert_eq!(
+            h.to_string(),
+            "0x066397f309d55f6caf6419cbb4120f5ada8e54254061b4b448359de388ab5526"
+        );        
     }
 
     use halo2_proofs::dev::MockProver;
