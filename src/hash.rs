@@ -1,6 +1,6 @@
 //! The hash circuit base on poseidon.
 
-use crate::poseidon::primitives::{ConstantLengthIden3, Hash, P128Pow5T3, Spec};
+use crate::poseidon::primitives::{ConstantLengthIden3, VariableLengthIden3, Hash, P128Pow5T3, Spec};
 use halo2_proofs::pairing::bn256::Fr;
 use halo2_proofs::{arithmetic::FieldExt, circuit::Chip};
 
@@ -21,6 +21,7 @@ pub trait Hashable: FieldExt {
 }
 
 type Poseidon = Hash<Fr, P128Pow5T3<Fr>, ConstantLengthIden3<2>, 3, 2>;
+type PoseidonBytes = Hash<Fr, P128Pow5T3<Fr>, VariableLengthIden3, 3, 2>;
 
 impl Hashable for Fr {
     type SpecType = P128Pow5T3<Self>;
@@ -243,6 +244,24 @@ mod tests {
         let b2: Fr = Fr::from_str_vartime("2").unwrap();
 
         let h = Fr::hash([b1, b2]);
+        assert_eq!(
+            h.to_string(),
+            "0x115cc0f5e7d690413df64c6b9662e9cf2a3617f2743245519e19607a4417189a" // "7853200120776062878684798364095072458815029376092732009249414926327459813530"
+        );
+    }
+
+    #[test]
+    fn poseidon_hash_bytes() {
+        let hasher = PoseidonBytes::init();
+        let msg = vec![
+            Fr::from_str_vartime("1").unwrap(),
+            Fr::from_str_vartime("2").unwrap(),
+            Fr::from_str_vartime("3").unwrap(),
+        ];
+
+        let supposed_bytes = 22;
+
+        let h = hasher.hash_with_cap(&msg, supposed_bytes);
         assert_eq!(
             h.to_string(),
             "0x115cc0f5e7d690413df64c6b9662e9cf2a3617f2743245519e19607a4417189a" // "7853200120776062878684798364095072458815029376092732009249414926327459813530"

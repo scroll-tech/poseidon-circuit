@@ -207,26 +207,26 @@ impl<F: FieldExt, S: Spec<F, T, RATE>, const T: usize, const RATE: usize>
     Sponge<F, S, Absorbing<F, RATE>, T, RATE>
 {
     /// Constructs a new sponge for the given Poseidon specification.
-    pub(crate) fn new(initial_capacity_element: F) -> Self {
+    pub(crate) fn new(initial_capacity_element: F, layout: usize) -> Self {
         let (round_constants, mds_matrix, _) = S::constants();
 
         let mode = Absorbing([None; RATE]);
         let mut state = [F::zero(); T];
-        state[RATE] = initial_capacity_element;
+        state[(RATE + layout)%T] = initial_capacity_element;
 
         Sponge {
             mode,
             state,
             mds_matrix,
             round_constants,
-            layout: 0,
+            layout,
             _marker: PhantomData::default(),
         }
     }
 
-    pub(crate) fn set_layout(mut self, layout: usize) -> Self {
-        self.layout = layout;
-        self
+    /// add the capacity into current position of output
+    pub(crate) fn update_capacity(&mut self, capacity_element: F) {
+        self.state[(RATE + self.layout)%T] += capacity_element;
     }
 
     /// Absorbs an element into the sponge.
@@ -368,6 +368,34 @@ impl<F: FieldExt, const RATE: usize, const L: usize> Domain<F, RATE> for Constan
     }
 }
 
+
+/// A Poseidon hash function used with variable input length, this is iden3's specifications
+#[derive(Clone, Copy, Debug)]
+pub struct VariableLengthIden3;
+
+impl<F: FieldExt, const RATE: usize> Domain<F, RATE> for VariableLengthIden3 {
+    type Padding = <ConstantLength<1> as Domain<F, RATE>>::Padding;
+
+    fn name() -> String {
+        "VariableLength in iden3's style".to_string()
+    }
+
+    // iden3's scheme do not set any capacity mark
+    fn initial_capacity_element() -> F {
+        <ConstantLengthIden3<1> as Domain<F, RATE>>::initial_capacity_element()
+    }
+
+    fn padding(input_len: usize) -> Self::Padding {
+        let k = input_len % RATE;
+        iter::repeat(F::zero()).take(if k == 0 { 0 } else {RATE - k})
+    }
+
+    fn layout(width: usize) -> usize {
+        <ConstantLengthIden3<1> as Domain<F, RATE>>::layout(width)
+    }
+}
+
+
 /// A Poseidon hash function, built around a sponge.
 pub struct Hash<
     F: FieldExt,
@@ -400,7 +428,7 @@ impl<F: FieldExt, S: Spec<F, T, RATE>, D: Domain<F, RATE>, const T: usize, const
     /// Initializes a new hasher.
     pub fn init() -> Self {
         Hash {
-            sponge: Sponge::new(D::initial_capacity_element()).set_layout(D::layout(T)),
+            sponge: Sponge::new(D::initial_capacity_element(), D::layout(T)),
             _domain: PhantomData::default(),
         }
     }
@@ -432,6 +460,24 @@ impl<F: FieldExt, S: Spec<F, T, RATE>, const T: usize, const RATE: usize, const 
         {
             self.sponge.absorb(value);
         }
+        self.sponge.finish_absorbing().squeeze()
+    }
+}
+
+impl<F: FieldExt, S: Spec<F, T, RATE>, const T: usize, const RATE: usize>
+    Hash<F, S, VariableLengthIden3, T, RATE>
+{
+    /// Hashes the given input.
+    pub fn hash_with_cap(mut self, message: &[F], cap: u64) -> F {
+        self.sponge.update_capacity(F::from_u128(cap as u128));
+        for value in message {
+            self.sponge.absorb(*value);
+        }
+
+        for pad in <VariableLengthIden3 as Domain<F, RATE>>::padding(message.len()) {
+            self.sponge.absorb(pad);
+        }
+
         self.sponge.finish_absorbing().squeeze()
     }
 }
