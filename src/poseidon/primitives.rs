@@ -432,6 +432,11 @@ impl<F: FieldExt, S: Spec<F, T, RATE>, D: Domain<F, RATE>, const T: usize, const
             _domain: PhantomData::default(),
         }
     }
+
+    /// help permute a state
+    pub fn permute(&self, state: &mut [F; T]) {
+        permute::<F, S, T, RATE>(state, &self.sponge.mds_matrix, &self.sponge.round_constants);
+    }    
 }
 
 impl<F: FieldExt, S: Spec<F, T, RATE>, const T: usize, const RATE: usize, const L: usize>
@@ -503,6 +508,21 @@ mod tests {
         // taking the first state element as the output.
         let mut state = [message[0], message[1], Fp::from_u128(2 << 64)];
         permute::<_, OrchardNullifier, 3, 2>(&mut state, &mds, &round_constants);
+        assert_eq!(state[0], result);
+    }
+
+    #[test]
+    fn hasher_permute_equivalence() {
+
+        let message = [Fp::from(6), Fp::from(42)];
+        let hasher = Hash::<_, OrchardNullifier, ConstantLength<2>, 3, 2>::init();
+        // The result should be equivalent to just directly applying the permutation and
+        // taking the first state element as the output.        
+        let mut state = [Fp::from(6), Fp::from(42), Fp::from_u128(2 << 64)];
+
+        hasher.permute(&mut state);
+
+        let result = hasher.hash(message);
         assert_eq!(state[0], result);
     }
 }
