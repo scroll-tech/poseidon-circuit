@@ -41,6 +41,7 @@ use halo2_proofs::{
 pub struct HashConfig<Fp: FieldExt> {
     permute_config: Pow5Config<Fp, 3, 2>,
     hash_table: [Column<Advice>; 3],
+    hash_table_aux: [Column<Advice>; 6],
     constants: [Column<Fixed>; 6],
 }
 
@@ -57,11 +58,14 @@ pub struct HashCircuit<Fp> {
     pub calcs: usize,
     /// the input messages for hashes
     pub inputs: Vec<[Fp; 2]>,
+    /// the control flag for each permutation
+    pub controls: Vec<Fp>,
     /// the expected hash output for checking
     pub checks: Vec<Option<Fp>>,
 }
 
 impl<'d, Fp: Copy> HashCircuit<Fp> {
+    /*
     /// create circuit from traces
     pub fn new(calcs: usize, src: &[&'d (Fp, Fp, Fp)]) -> Self {
         let inputs: Vec<_> = src.iter().take(calcs).map(|(a, b, _)| [*a, *b]).collect();
@@ -78,7 +82,7 @@ impl<'d, Fp: Copy> HashCircuit<Fp> {
             inputs,
             checks,
         }
-    }
+    }*/
 }
 
 impl<Fp: Hashable> Circuit<Fp> for HashCircuit<Fp> {
@@ -98,8 +102,9 @@ impl<Fp: Hashable> Circuit<Fp> for HashCircuit<Fp> {
         let constants = [0; 6].map(|_| meta.fixed_column());
 
         let hash_table = [0; 3].map(|_| meta.advice_column());
-        for col in hash_table {
-            meta.enable_equality(col);
+        let hash_table_aux = [0; 6].map(|_| meta.advice_column());
+        for col in hash_table.iter().chain(hash_table_aux.iter()) {
+            meta.enable_equality(*col);
         }
         meta.enable_equality(constants[0]);
 
@@ -112,6 +117,7 @@ impl<Fp: Hashable> Circuit<Fp> for HashCircuit<Fp> {
                 constants[3..].try_into().unwrap(), //rc_b
             ),
             hash_table,
+            hash_table_aux,
             constants,
         }
     }
@@ -121,7 +127,7 @@ impl<Fp: Hashable> Circuit<Fp> for HashCircuit<Fp> {
         config: Self::Config,
         mut layouter: impl Layouter<Fp>,
     ) -> Result<(), Error> {
-        let constant_cells = layouter.assign_region(
+        layouter.assign_region(
             || "constant heading",
             |mut region| {
                 let c0 = region.assign_fixed(
@@ -131,31 +137,44 @@ impl<Fp: Hashable> Circuit<Fp> for HashCircuit<Fp> {
                     || Ok(Fp::zero()),
                 )?;
 
-                Ok([StateWord::from(c0)])
+                let c_ctrl = region.assign_advice(
+                    || "control head",
+                    config.hash_table_aux[0],
+                    0,
+                    || Ok(Fp::zero()),
+                )?;
+
+                region.constrain_equal(c_ctrl.cell(), c0.cell())
             },
         )?;
 
-        let zero_cell = &constant_cells[0];
-
-        let (states, hashes) = layouter.assign_region(
+        let (states_in, states_out) = layouter.assign_region(
             || "hash table",
             |mut region| {
-                let mut states = Vec::new();
-                let mut hashes = Vec::new();
+                let mut states_in = Vec::new();
+                let mut states_out = Vec::new();
+                let hash_helper = Hash::<Fp, Fp::SpecType, VariableLengthIden3, 3, 2>::init();
 
                 let dummy_input: [Option<&[Fp; 2]>; 1] = [None];
-                let dummy_check: [Option<&Fp>; 1] = [None];
+                let dummy_item: [Option<&Fp>; 1] = [None];
                 let inputs_i = self
                     .inputs
                     .iter()
                     .map(Some)
                     .chain(dummy_input.into_iter().cycle())
                     .take(self.calcs);
+                let controls_i = self
+                    .controls
+                    .iter()
+                    .map(|i| Some(i))
+                    .chain(dummy_item.into_iter().cycle())
+                    .take(self.calcs);
+
                 let checks_i = self
                     .checks
                     .iter()
                     .map(|i| i.as_ref())
-                    .chain(dummy_check.into_iter().cycle())
+                    .chain(dummy_item.into_iter().cycle())
                     .take(self.calcs);
 
                 // notice our hash table has a (0, 0, 0) at the beginning
@@ -163,51 +182,115 @@ impl<Fp: Hashable> Circuit<Fp> for HashCircuit<Fp> {
                     region.assign_advice(|| "dummy inputs", col, 0, || Ok(Fp::zero()))?;
                 }
 
-                for (i, (inp, check)) in inputs_i.zip(checks_i).enumerate() {
+                let mut is_new_sponge = true;
+                let mut state : [Fp; 3] = [Fp::zero(); 3];
+
+                for (i, ((inp, control), check)) in inputs_i.zip(controls_i).zip(checks_i).enumerate() {
+
+                    let control = control.map(|c|*c).unwrap_or_else(Fp::zero);
+
+                    if is_new_sponge {
+                        state[0] = control;
+                    }
+
                     let inp = inp
                         .map(|[a, b]| [*a, *b])
                         .unwrap_or_else(|| [Fp::zero(), Fp::zero()]);
-                    let offset = i + 1;
 
-                    let c1 = region.assign_advice(
+                    (&mut state).into_iter().skip(1).zip(inp).for_each(|(s, inp)|{
+                        if is_new_sponge {
+                            *s = inp;
+                        }else {
+                            *s += inp;
+                        }
+                    });
+
+                    is_new_sponge = Fp::zero() == control;
+
+                    let offset = i + 1;
+                    let state_start = state.clone();
+                    hash_helper.permute(&mut state); //here we calculate the hash
+
+                    //and sanity check ...
+                    if let Some(ck) = check {
+                        assert_eq!(*ck, state[0]);
+                    }
+
+                    let c_start = [
+                        region.assign_advice(
+                            || format!("state input 0_{}", i),
+                            config.hash_table_aux[1],
+                            offset,
+                            || Ok(state_start[0]),
+                        )?,
+                        region.assign_advice(
+                            || format!("state input 1_{}", i),
+                            config.hash_table_aux[2],
+                            offset,
+                            || Ok(state_start[1]),
+                        )?,
+                        region.assign_advice(
+                            || format!("state input 2_{}", i),
+                            config.hash_table_aux[3],
+                            offset,
+                            || Ok(state_start[2]),
+                        )?,
+                    ];
+
+                    let c_end = [
+                        region.assign_advice(
+                            || format!("state output hash_{}", i),
+                            config.hash_table[0],
+                            offset,
+                            || Ok(state[0]),
+                        )?,
+                        region.assign_advice(
+                            || format!("state output 1_{}", i),
+                            config.hash_table_aux[4],
+                            offset,
+                            || Ok(state[1]),
+                        )?,
+                        region.assign_advice(
+                            || format!("state output 2_{}", i),
+                            config.hash_table_aux[5],
+                            offset,
+                            || Ok(state[2]),
+                        )?,                        
+                    ];
+
+                    region.assign_advice(
+                        || format!("state input control_{}", i),
+                        config.hash_table_aux[0],
+                        offset,
+                        || Ok(control),
+                    )?;
+
+                    region.assign_advice(
                         || format!("hash input first_{}", i),
-                        config.hash_table[0],
+                        config.hash_table[1],
                         offset,
                         || Ok(inp[0]),
                     )?;
 
-                    let c2 = region.assign_advice(
-                        || format!("hash input second_{}", i),
-                        config.hash_table[1],
+                    region.assign_advice(
+                        || format!("hahs input second_{}", i),
+                        config.hash_table[2],
                         offset,
                         || Ok(inp[1]),
                     )?;
 
-                    let c3 = region.assign_advice(
-                        || format!("hash output_{}", i),
-                        config.hash_table[2],
-                        offset,
-                        || {
-                            Ok(if let Some(v) = check {
-                                *v
-                            } else {
-                                Hashable::hash(inp)
-                            })
-                        },
-                    )?;
-
                     //we directly specify the init state of permutation
-                    states.push([zero_cell.clone(), StateWord::from(c1), StateWord::from(c2)]);
-                    hashes.push(StateWord::from(c3));
+                    states_in.push(c_start.map(StateWord::from));
+                    states_out.push(c_end.map(StateWord::from));
                 }
 
-                Ok((states, hashes))
+                Ok((states_in, states_out))
             },
         )?;
 
         let mut chip_finals = Vec::new();
 
-        for state in states {
+        for state in states_in {
             let chip = Pow5Chip::construct(config.permute_config.clone());
 
             let final_state = <Pow5Chip<_, 3, 2> as PoseidonInstructions<
@@ -223,8 +306,10 @@ impl<Fp: Hashable> Circuit<Fp> for HashCircuit<Fp> {
         layouter.assign_region(
             || "final state dummy",
             |mut region| {
-                for (hash, final_state) in hashes.iter().zip(chip_finals.iter()) {
-                    region.constrain_equal(hash.cell(), final_state[0].cell())?;
+                for (state, final_state) in states_out.iter().zip(chip_finals.iter()) {
+                    for (s_cell, final_cell) in state.iter().zip(final_state.iter()){
+                        region.constrain_equal(s_cell.cell(), final_cell.cell())?;
+                    }
                 }
 
                 Ok(())
