@@ -1,7 +1,7 @@
 //! The hash circuit base on poseidon.
 
 use crate::poseidon::primitives::{ConstantLengthIden3, VariableLengthIden3, Hash, P128Pow5T3, Spec};
-use halo2_proofs::pairing::bn256::Fr;
+use halo2_proofs::halo2curves::bn256::Fr;
 use halo2_proofs::{arithmetic::FieldExt, circuit::Chip};
 
 trait PoseidonChip<Fp: FieldExt>: Chip<Fp> {
@@ -32,7 +32,7 @@ impl Hashable for Fr {
 
 use crate::poseidon::{PoseidonInstructions, Pow5Chip, Pow5Config, StateWord, Var};
 use halo2_proofs::{
-    circuit::{Layouter, SimpleFloorPlanner},
+    circuit::{Layouter, SimpleFloorPlanner, Value},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed},
 };
 
@@ -65,7 +65,7 @@ pub struct HashCircuit<Fp> {
 }
 
 impl<'d, Fp: Copy> HashCircuit<Fp> {
-    /*
+    
     /// create circuit from traces
     pub fn new(calcs: usize, src: &[&'d (Fp, Fp, Fp)]) -> Self {
         let inputs: Vec<_> = src.iter().take(calcs).map(|(a, b, _)| [*a, *b]).collect();
@@ -80,9 +80,10 @@ impl<'d, Fp: Copy> HashCircuit<Fp> {
         Self {
             calcs,
             inputs,
+            controls: Vec::new(),
             checks,
         }
-    }*/
+    }
 }
 
 impl<Fp: Hashable> Circuit<Fp> for HashCircuit<Fp> {
@@ -103,7 +104,7 @@ impl<Fp: Hashable> Circuit<Fp> for HashCircuit<Fp> {
 
         let hash_table = [0; 3].map(|_| meta.advice_column());
         let hash_table_aux = [0; 6].map(|_| meta.advice_column());
-        for col in hash_table.iter().chain(hash_table_aux.iter()) {
+        for col in hash_table_aux.iter().chain(hash_table_aux.iter()) {
             meta.enable_equality(*col);
         }
         meta.enable_equality(constants[0]);
@@ -134,14 +135,14 @@ impl<Fp: Hashable> Circuit<Fp> for HashCircuit<Fp> {
                     || "constant zero",
                     config.constants[0],
                     0,
-                    || Ok(Fp::zero()),
+                    || Value::known(Fp::zero()),
                 )?;
 
                 let c_ctrl = region.assign_advice(
                     || "control head",
                     config.hash_table_aux[0],
                     0,
-                    || Ok(Fp::zero()),
+                    || Value::known(Fp::zero()),
                 )?;
 
                 region.constrain_equal(c_ctrl.cell(), c0.cell())
@@ -179,7 +180,7 @@ impl<Fp: Hashable> Circuit<Fp> for HashCircuit<Fp> {
 
                 // notice our hash table has a (0, 0, 0) at the beginning
                 for col in config.hash_table {
-                    region.assign_advice(|| "dummy inputs", col, 0, || Ok(Fp::zero()))?;
+                    region.assign_advice(|| "dummy inputs", col, 0, || Value::known(Fp::zero()))?;
                 }
 
                 let mut is_new_sponge = true;
@@ -221,19 +222,19 @@ impl<Fp: Hashable> Circuit<Fp> for HashCircuit<Fp> {
                             || format!("state input 0_{}", i),
                             config.hash_table_aux[1],
                             offset,
-                            || Ok(state_start[0]),
+                            || Value::known(state_start[0]),
                         )?,
                         region.assign_advice(
                             || format!("state input 1_{}", i),
                             config.hash_table_aux[2],
                             offset,
-                            || Ok(state_start[1]),
+                            || Value::known(state_start[1]),
                         )?,
                         region.assign_advice(
                             || format!("state input 2_{}", i),
                             config.hash_table_aux[3],
                             offset,
-                            || Ok(state_start[2]),
+                            || Value::known(state_start[2]),
                         )?,
                     ];
 
@@ -242,19 +243,19 @@ impl<Fp: Hashable> Circuit<Fp> for HashCircuit<Fp> {
                             || format!("state output hash_{}", i),
                             config.hash_table[0],
                             offset,
-                            || Ok(state[0]),
+                            || Value::known(state[0]),
                         )?,
                         region.assign_advice(
                             || format!("state output 1_{}", i),
                             config.hash_table_aux[4],
                             offset,
-                            || Ok(state[1]),
+                            || Value::known(state[1]),
                         )?,
                         region.assign_advice(
                             || format!("state output 2_{}", i),
                             config.hash_table_aux[5],
                             offset,
-                            || Ok(state[2]),
+                            || Value::known(state[2]),
                         )?,                        
                     ];
 
@@ -262,21 +263,21 @@ impl<Fp: Hashable> Circuit<Fp> for HashCircuit<Fp> {
                         || format!("state input control_{}", i),
                         config.hash_table_aux[0],
                         offset,
-                        || Ok(control),
+                        || Value::known(control),
                     )?;
 
                     region.assign_advice(
                         || format!("hash input first_{}", i),
                         config.hash_table[1],
                         offset,
-                        || Ok(inp[0]),
+                        || Value::known(inp[0]),
                     )?;
 
                     region.assign_advice(
                         || format!("hahs input second_{}", i),
                         config.hash_table[2],
                         offset,
-                        || Ok(inp[1]),
+                        || Value::known(inp[1]),
                     )?;
 
                     //we directly specify the init state of permutation
@@ -321,7 +322,7 @@ impl<Fp: Hashable> Circuit<Fp> for HashCircuit<Fp> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ff::PrimeField;
+    use halo2_proofs::halo2curves::group::ff::PrimeField;
 
     #[test]
     fn poseidon_hash() {
@@ -330,7 +331,7 @@ mod tests {
 
         let h = Fr::hash([b1, b2]);
         assert_eq!(
-            h.to_string(),
+            format!("{:?}", h),
             "0x115cc0f5e7d690413df64c6b9662e9cf2a3617f2743245519e19607a4417189a" // "7853200120776062878684798364095072458815029376092732009249414926327459813530"
         );
     }
@@ -348,7 +349,7 @@ mod tests {
 
         let h = hasher.hash_with_cap(&msg, supposed_bytes);
         assert_eq!(
-            h.to_string(),
+            format!("{:?}", h),
             "0x212b546f9c67c4fdcba131035644aa1d8baa8943f84b0a27e8f65b5bd532213e"
         );
 
@@ -364,7 +365,7 @@ mod tests {
 
         let h = hasher.hash_with_cap(&msg, supposed_bytes);
         assert_eq!(
-            h.to_string(),
+            format!("{:?}", h),
             "0x066397f309d55f6caf6419cbb4120f5ada8e54254061b4b448359de388ab5526"
         );        
     }
@@ -383,12 +384,12 @@ mod tests {
             .unwrap();
 
         let circuit = HashCircuit::<Fr> {
-            calcs: 1,
+            calcs: 2,
             ..Default::default()
         };
         halo2_proofs::dev::CircuitLayout::default()
             .show_equality_constraints(true)
-            .render(6, &circuit, &root)
+            .render(7, &circuit, &root)
             .unwrap();
     }
 

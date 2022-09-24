@@ -1,4 +1,4 @@
-use halo2_proofs::halo2curves::pasta;
+use halo2_proofs::halo2curves::{pasta, group::ff::PrimeField};
 pub(crate) use pasta::pallas;
 pub(crate) use pasta::Fp;
 pub(crate) mod fp;
@@ -18,7 +18,7 @@ impl super::p128pow5t3::P128Pow5T3Constants for Fp {
     }
 }
 
-fn sqrt_tonelli_shanks<F: ff::PrimeField, S: AsRef<[u64]>>(f: &F, tm1d2: S) -> subtle::CtOption<F> {
+fn sqrt_tonelli_shanks<F: PrimeField, S: AsRef<[u64]>>(f: &F, tm1d2: S) -> subtle::CtOption<F> {
     use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
     // w = self^((t - 1) // 2)

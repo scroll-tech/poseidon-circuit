@@ -4,9 +4,8 @@ use std::convert::TryInto;
 use std::fmt;
 use std::marker::PhantomData;
 
-use ff::Field;
 use halo2_proofs::{
-    arithmetic::FieldExt,
+    arithmetic::{Field, FieldExt},
     circuit::{AssignedCell, Chip, Layouter},
     plonk::Error,
 };
