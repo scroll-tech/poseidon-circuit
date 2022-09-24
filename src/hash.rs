@@ -104,7 +104,7 @@ impl<Fp: Hashable> Circuit<Fp> for HashCircuit<Fp> {
 
         let hash_table = [0; 3].map(|_| meta.advice_column());
         let hash_table_aux = [0; 6].map(|_| meta.advice_column());
-        for col in hash_table_aux.iter().chain(hash_table_aux.iter()) {
+        for col in hash_table_aux.iter().chain(hash_table[0..1].iter()) {
             meta.enable_equality(*col);
         }
         meta.enable_equality(constants[0]);
