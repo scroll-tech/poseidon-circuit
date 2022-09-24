@@ -1,5 +1,5 @@
 pub(crate) mod fp;
-pub(crate) use halo2_proofs::pairing::bn256::Fr as Fp;
+pub(crate) use halo2_proofs::halo2curves::bn256::Fr as Fp;
 
 use super::p128pow5t3::P128Pow5T3Constants;
 use super::Mds;
@@ -30,19 +30,19 @@ mod tests {
         let m = *fp::MDS;
 
         assert_eq!(
-            c[0][0].to_string(),
+            format!("{:?}", c[0][0]),
             "0x0ee9a592ba9a9518d05986d656f40c2114c4993c11bb29938d21d47304cd8e6e"
         );
         assert_eq!(
-            c[c.len() - 1][2].to_string(),
+            format!("{:?}", c[c.len() - 1][2]),
             "0x1da55cc900f0d21f4a3e694391918a1b3c23b2ac773c6b3ef88e2e4228325161"
         );
         assert_eq!(
-            m[0][0].to_string(),
+            format!("{:?}", m[0][0]),
             "0x109b7f411ba0e4c9b2b70caf5c36a7b194be7c11ad24378bfedb68592ba8118b"
         );
         assert_eq!(
-            m[m.len() - 1][0].to_string(),
+            format!("{:?}", m[m.len() - 1][0]),
             "0x143021ec686a3f330d5f9e654638065ce6cd79e28c5b3753326244ee65a1b1a7"
         );
     }

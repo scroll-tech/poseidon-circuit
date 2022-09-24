@@ -1,5 +1,6 @@
-mod pallas;
-pub(crate) use pallas::Fp;
+use halo2_proofs::halo2curves::pasta;
+pub(crate) use pasta::pallas;
+pub(crate) use pasta::Fp;
 pub(crate) mod fp;
 pub(crate) mod test_vectors;
 
