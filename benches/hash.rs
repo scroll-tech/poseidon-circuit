@@ -2,9 +2,9 @@
 extern crate bencher;
 
 use bencher::Bencher;
-use ff::Field;
 use hash_circuit::poseidon::primitives::{ConstantLengthIden3, Hash, P128Pow5T3};
-use halo2_proofs::pairing::bn256::Fr;
+use halo2_proofs::arithmetic::Field;
+use halo2_proofs::halo2curves::bn256::Fr;
 use lazy_static::lazy_static;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
