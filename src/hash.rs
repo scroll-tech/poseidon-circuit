@@ -128,7 +128,7 @@ impl<Fp: Hashable> Circuit<Fp> for HashCircuit<Fp> {
         config: Self::Config,
         mut layouter: impl Layouter<Fp>,
     ) -> Result<(), Error> {
-        layouter.assign_region(
+        let constants_cell = layouter.assign_region(
             || "constant heading",
             |mut region| {
                 let c0 = region.assign_fixed(
@@ -138,14 +138,7 @@ impl<Fp: Hashable> Circuit<Fp> for HashCircuit<Fp> {
                     || Value::known(Fp::zero()),
                 )?;
 
-                let c_ctrl = region.assign_advice(
-                    || "control head",
-                    config.hash_table_aux[0],
-                    0,
-                    || Value::known(Fp::zero()),
-                )?;
-
-                region.constrain_equal(c_ctrl.cell(), c0.cell())
+                Ok([c0])
             },
         )?;
 
@@ -182,6 +175,16 @@ impl<Fp: Hashable> Circuit<Fp> for HashCircuit<Fp> {
                 for col in config.hash_table {
                     region.assign_advice(|| "dummy inputs", col, 0, || Value::known(Fp::zero()))?;
                 }
+
+                let c_ctrl = region.assign_advice(
+                    || "control head",
+                    config.hash_table_aux[0],
+                    0,
+                    || Value::known(Fp::zero()),
+                )?;
+
+                // contraint 0 to zero constant
+                region.constrain_equal(c_ctrl.cell(), constants_cell[0].cell())?;
 
                 let mut is_new_sponge = true;
                 let mut state : [Fp; 3] = [Fp::zero(); 3];
