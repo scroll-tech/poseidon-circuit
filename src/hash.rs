@@ -1,6 +1,6 @@
 //! The hash circuit base on poseidon.
 
-use crate::poseidon::primitives::{ConstantLengthIden3, VariableLengthIden3, Hash, P128Pow5T3, Spec};
+use crate::poseidon::primitives::{ConstantLengthIden3, VariableLengthIden3, Hash, P128Pow5T3, Spec, Domain};
 use halo2_proofs::halo2curves::bn256::Fr;
 use halo2_proofs::{arithmetic::FieldExt, circuit::Chip};
 
@@ -12,12 +12,28 @@ trait PoseidonChip<Fp: FieldExt>: Chip<Fp> {
 pub trait Hashable: FieldExt {
     /// the spec type used in circuit for this hashable field
     type SpecType: Spec<Self, 3, 2>;
+    /// the domain type used for hash calculation
+    type DomainType: Domain<Self, 2>;
+
     /// execute hash for any sequence of fields
     fn hash(inp: [Self; 2]) -> Self;
     /// obtain the rows consumed by each circuit block
     fn hash_block_size() -> usize {
         1 + Self::SpecType::full_rounds() + (Self::SpecType::partial_rounds() + 1) / 2
     }
+    /// init a hasher used for hash
+    fn hasher() -> Hash<Self, Self::SpecType, Self::DomainType, 3, 2> {
+        Hash::<Self, Self::SpecType, Self::DomainType, 3, 2>::init()
+    }
+}
+
+/// indicate an message stream constructed by the field can be hashed, commonly 
+/// it just need to update the Domain
+pub trait MessageHashable : Hashable {
+    /// the domain type used for message hash
+    type DomainType: Domain<Self, 2>;
+    /// hash message
+    fn hash_msg(msg: &[Self]) -> Self;
 }
 
 type Poseidon = Hash<Fr, P128Pow5T3<Fr>, ConstantLengthIden3<2>, 3, 2>;
@@ -25,35 +41,41 @@ type PoseidonBytes = Hash<Fr, P128Pow5T3<Fr>, VariableLengthIden3, 3, 2>;
 
 impl Hashable for Fr {
     type SpecType = P128Pow5T3<Self>;
+    type DomainType = ConstantLengthIden3<2>;
+
     fn hash(inp: [Self; 2]) -> Self {
-        Poseidon::init().hash(inp)
+        Self::hasher().hash(inp)
     }
 }
 
 use crate::poseidon::{PoseidonInstructions, Pow5Chip, Pow5Config, StateWord, Var};
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed},
+    plonk::{Selector, Advice, Circuit, Column, ConstraintSystem, Expression, Error, Fixed},
+    poly::Rotation,
 };
 
 /// The config for hash circuit
 #[derive(Clone, Debug)]
 pub struct HashConfig<Fp: FieldExt> {
     permute_config: Pow5Config<Fp, 3, 2>,
-    hash_table: [Column<Advice>; 3],
-    hash_table_aux: [Column<Advice>; 6],
+    hash_table: [Column<Advice>; 4],
+    hash_table_aux: [Column<Advice>; 5],
+    control_aux: Column<Advice>,
+    s_hash_last: Column<Advice>,
     constants: [Column<Fixed>; 6],
+    s_table: Selector,
 }
 
 impl<Fp: FieldExt> HashConfig<Fp> {
-    pub(crate) fn commitment_index(&self) -> [usize; 3] {
+    pub(crate) fn commitment_index(&self) -> [usize; 4] {
         self.hash_table.map(|col| col.index())
     }
 }
 
 /// Hash circuit
 #[derive(Clone, Default)]
-pub struct HashCircuit<Fp> {
+pub struct HashCircuit<Fp, const STEP: usize> {
     /// the records in circuits
     pub calcs: usize,
     /// the input messages for hashes
@@ -64,29 +86,41 @@ pub struct HashCircuit<Fp> {
     pub checks: Vec<Option<Fp>>,
 }
 
-impl<'d, Fp: Copy> HashCircuit<Fp> {
+impl<Fp: Hashable, const STEP: usize> HashCircuit<Fp, STEP> {
     
     /// create circuit from traces
-    pub fn new(calcs: usize, src: &[&'d (Fp, Fp, Fp)]) -> Self {
-        let inputs: Vec<_> = src.iter().take(calcs).map(|(a, b, _)| [*a, *b]).collect();
-
-        let checks: Vec<_> = src
-            .iter()
-            .take(calcs)
-            .map(|(_, _, c)| Some(*c))
-            .chain([None])
-            .collect();
+    pub fn new(calcs: usize) -> Self {
 
         Self {
             calcs,
-            inputs,
+            inputs: Vec::new(),
             controls: Vec::new(),
-            checks,
+            checks: Vec::new(),
         }
     }
+
+    /// Add common inputs
+    pub fn constant_inputs<'d>(&mut self, src: impl IntoIterator<Item=&'d [Fp; 2]>){
+        let mut new_inps : Vec<_> = src.into_iter().map(|inp| *inp).collect();
+        self.inputs.append(&mut new_inps);
+    }
+
+    /// Add common inputs with expected hash as check
+    pub fn constant_inputs_with_check<'d>(&mut self, src: impl IntoIterator<Item=&'d (Fp, Fp, Fp)> + Copy){
+
+        // align input and checks
+        self.checks.resize(self.inputs.len(), None);
+
+        let mut new_inps : Vec<_> = src.into_iter().map(|(a, b, _)| [*a, *b]).collect();
+        self.inputs.append(&mut new_inps);
+
+        let mut new_checks : Vec<_> = src.into_iter().map(|(_, _, c)| Some(*c)).collect();
+        self.checks.append(&mut new_checks);
+    }
+
 }
 
-impl<Fp: Hashable> Circuit<Fp> for HashCircuit<Fp> {
+impl<Fp: Hashable, const STEP: usize> Circuit<Fp> for HashCircuit<Fp, STEP> {
     type Config = HashConfig<Fp>;
     type FloorPlanner = SimpleFloorPlanner;
 
@@ -101,13 +135,63 @@ impl<Fp: Hashable> Circuit<Fp> for HashCircuit<Fp> {
         let state = [0; 3].map(|_| meta.advice_column());
         let partial_sbox = meta.advice_column();
         let constants = [0; 6].map(|_| meta.fixed_column());
+        let s_table = meta.selector();
 
-        let hash_table = [0; 3].map(|_| meta.advice_column());
-        let hash_table_aux = [0; 6].map(|_| meta.advice_column());
+        let hash_table = [0; 4].map(|_| meta.advice_column());
+        let hash_table_aux = [0; 5].map(|_| meta.advice_column());
         for col in hash_table_aux.iter().chain(hash_table[0..1].iter()) {
             meta.enable_equality(*col);
         }
         meta.enable_equality(constants[0]);
+
+        let control = hash_table[3];
+        let s_hash_last = meta.advice_column();
+        let control_aux = meta.advice_column();
+
+        let state_in = &hash_table_aux[0..3];
+        let state_for_next_in = &hash_table_aux[3..5];
+        let hash_out = hash_table[2];
+        let hash_inp = &hash_table[0..2];
+
+        meta.create_gate("control constrain", |meta| {
+            let s_enable = meta.query_selector(s_table);
+            let ctrl = meta.query_advice(control, Rotation::cur());
+            let ctrl_bool = ctrl.clone() * meta.query_advice(control_aux, Rotation::cur());
+            let s_last = meta.query_advice(s_hash_last, Rotation::cur());
+
+            vec![
+                s_enable.clone() * ctrl * (Expression::Constant(Fp::one()) - ctrl_bool),
+                s_enable * s_last.clone() * (Expression::Constant(Fp::one()) - s_last),
+            ]
+        });
+
+        meta.create_gate("input constrain", |meta| {
+            let s_enable = meta.query_selector(s_table);
+            let s_continue_hash = Expression::Constant(Fp::one()) - meta.query_advice(s_hash_last, Rotation::prev());
+
+            // external input: if not new hash, input must add prev state
+            let mut ret : Vec<_> = state_in[1..].iter().zip(state_for_next_in.iter()).zip(hash_inp.iter())
+                .map(|((inp, prev_inp), ext_inp)|{
+
+                    let inp = meta.query_advice(*inp, Rotation::cur());
+                    let prev_inp = meta.query_advice(*prev_inp, Rotation::prev());
+                    let ext_inp = meta.query_advice(*ext_inp, Rotation::cur());
+
+                    s_enable.clone() * (prev_inp * s_continue_hash.clone() + ext_inp - inp)
+                }).collect();
+
+            assert_eq!(hash_inp.len(), ret.len());
+
+            let inp_hash = meta.query_advice(state_in[0], Rotation::cur());
+            let inp_hash_prev = meta.query_advice(hash_out, Rotation::prev());
+            let inp_hash_init = meta.query_advice(control, Rotation::cur());
+
+            // hash output: must inherit prev state or apply current control flag (for new hash)
+            ret.push(s_enable.clone() * (inp_hash.clone() - inp_hash_init) * (inp_hash.clone() - inp_hash_prev.clone()));
+            ret.push(s_enable * s_continue_hash * (inp_hash - inp_hash_prev));
+            ret
+            
+        });
 
         HashConfig {
             permute_config: Pow5Chip::configure::<Fp::SpecType>(
@@ -119,7 +203,10 @@ impl<Fp: Hashable> Circuit<Fp> for HashCircuit<Fp> {
             ),
             hash_table,
             hash_table_aux,
+            control_aux,
             constants,
+            s_table,
+            s_hash_last,
         }
     }
 
@@ -147,7 +234,7 @@ impl<Fp: Hashable> Circuit<Fp> for HashCircuit<Fp> {
             |mut region| {
                 let mut states_in = Vec::new();
                 let mut states_out = Vec::new();
-                let hash_helper = Hash::<Fp, Fp::SpecType, VariableLengthIden3, 3, 2>::init();
+                let hash_helper = Fp::hasher();
 
                 let dummy_input: [Option<&[Fp; 2]>; 1] = [None];
                 let dummy_item: [Option<&Fp>; 1] = [None];
@@ -223,19 +310,19 @@ impl<Fp: Hashable> Circuit<Fp> for HashCircuit<Fp> {
                     let c_start = [
                         region.assign_advice(
                             || format!("state input 0_{}", i),
-                            config.hash_table_aux[1],
+                            config.hash_table_aux[0],
                             offset,
                             || Value::known(state_start[0]),
                         )?,
                         region.assign_advice(
                             || format!("state input 1_{}", i),
-                            config.hash_table_aux[2],
+                            config.hash_table_aux[1],
                             offset,
                             || Value::known(state_start[1]),
                         )?,
                         region.assign_advice(
                             || format!("state input 2_{}", i),
-                            config.hash_table_aux[3],
+                            config.hash_table_aux[2],
                             offset,
                             || Value::known(state_start[2]),
                         )?,
@@ -250,13 +337,13 @@ impl<Fp: Hashable> Circuit<Fp> for HashCircuit<Fp> {
                         )?,
                         region.assign_advice(
                             || format!("state output 1_{}", i),
-                            config.hash_table_aux[4],
+                            config.hash_table_aux[3],
                             offset,
                             || Value::known(state[1]),
                         )?,
                         region.assign_advice(
                             || format!("state output 2_{}", i),
-                            config.hash_table_aux[5],
+                            config.hash_table_aux[4],
                             offset,
                             || Value::known(state[2]),
                         )?,                        
@@ -264,9 +351,23 @@ impl<Fp: Hashable> Circuit<Fp> for HashCircuit<Fp> {
 
                     region.assign_advice(
                         || format!("state input control_{}", i),
-                        config.hash_table_aux[0],
+                        config.hash_table[3],
                         offset,
                         || Value::known(control),
+                    )?;
+
+                    region.assign_advice(
+                        || format!("state input control_aux_{}", i),
+                        config.control_aux,
+                        offset,
+                        || Value::known(control.invert().unwrap_or_else(Fp::zero)),
+                    )?;
+
+                    region.assign_advice(
+                        || format!("state last control_{}", i),
+                        config.s_hash_last,
+                        offset,
+                        || Value::known(if control < Fp::from_u128(STEP as u128) {Fp::one()} else {Fp::zero()}),
                     )?;
 
                     region.assign_advice(
@@ -396,20 +497,51 @@ mod tests {
             .unwrap();
     }
 
+    type HashCircuit = super::HashCircuit<Fr, 32>;
+
     #[test]
     fn poseidon_hash_circuit() {
-        let message = [
+        let message1 = [
             Fr::from_str_vartime("1").unwrap(),
             Fr::from_str_vartime("2").unwrap(),
         ];
 
-        let k = 6;
-        let circuit = HashCircuit::<Fr> {
-            calcs: 1,
-            inputs: vec![message],
+        let message2 = [
+            Fr::from_str_vartime("2").unwrap(),
+            Fr::from_str_vartime("3").unwrap(),
+        ];
+
+        let k = 7;
+        let circuit = HashCircuit {
+            calcs: 2,
+            inputs: vec![message1, message2],
             ..Default::default()
         };
         let prover = MockProver::run(k, &circuit, vec![]).unwrap();
         assert_eq!(prover.verify(), Ok(()));
     }
+
+    #[test]
+    fn poseidon_var_len_hash_circuit() {
+        let message1 = [
+            Fr::from_str_vartime("1").unwrap(),
+            Fr::from_str_vartime("2").unwrap(),
+        ];
+
+        let message2 = [
+            Fr::from_str_vartime("50331648").unwrap(),
+            Fr::zero(),
+        ];
+
+        let k = 8;
+        let circuit = HashCircuit {
+            calcs: 4,
+            inputs: vec![message1, message2],
+            controls: vec![Fr::from_u128(45), Fr::from_u128(13)],
+            checks: vec![None, Some(Fr::from_str_vartime("15002881182751877599173281392790087382867290792048832034781070831698029191486").unwrap())],
+        };
+        let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+        assert_eq!(prover.verify(), Ok(()));
+    }
+
 }
