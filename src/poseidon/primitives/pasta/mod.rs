@@ -1,4 +1,4 @@
-use halo2_proofs::halo2curves::{pasta, group::ff::PrimeField};
+use halo2_proofs::halo2curves::{group::ff::PrimeField, pasta};
 pub(crate) use pasta::pallas;
 pub(crate) use pasta::Fp;
 pub(crate) mod fp;

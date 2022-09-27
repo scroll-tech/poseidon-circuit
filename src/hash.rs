@@ -1,6 +1,8 @@
 //! The hash circuit base on poseidon.
 
-use crate::poseidon::primitives::{ConstantLengthIden3, VariableLengthIden3, Hash, P128Pow5T3, Spec, Domain};
+use crate::poseidon::primitives::{
+    ConstantLengthIden3, Domain, Hash, P128Pow5T3, Spec, VariableLengthIden3,
+};
 use halo2_proofs::halo2curves::bn256::Fr;
 use halo2_proofs::{arithmetic::FieldExt, circuit::Chip};
 
@@ -27,9 +29,9 @@ pub trait Hashable: FieldExt {
     }
 }
 
-/// indicate an message stream constructed by the field can be hashed, commonly 
+/// indicate an message stream constructed by the field can be hashed, commonly
 /// it just need to update the Domain
-pub trait MessageHashable : Hashable {
+pub trait MessageHashable: Hashable {
     /// the domain type used for message hash
     type DomainType: Domain<Self, 2>;
     /// hash message
@@ -51,7 +53,9 @@ impl Hashable for Fr {
 use crate::poseidon::{PoseidonInstructions, Pow5Chip, Pow5Config, StateWord, Var};
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
-    plonk::{Selector, Advice, Circuit, Column, ConstraintSystem, Expression, Error, Fixed},
+    plonk::{
+        Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, Selector, TableColumn,
+    },
     poly::Rotation,
 };
 
@@ -64,6 +68,7 @@ pub struct HashConfig<Fp: FieldExt> {
     control_aux: Column<Advice>,
     s_sponge_continue: Column<Advice>,
     constants: [Column<Fixed>; 6],
+    control_step_range: TableColumn,
     s_table: Selector,
 }
 
@@ -87,10 +92,8 @@ pub struct HashCircuit<Fp, const STEP: usize> {
 }
 
 impl<Fp: Hashable, const STEP: usize> HashCircuit<Fp, STEP> {
-    
     /// create circuit from traces
     pub fn new(calcs: usize) -> Self {
-
         Self {
             calcs,
             inputs: Vec::new(),
@@ -100,24 +103,25 @@ impl<Fp: Hashable, const STEP: usize> HashCircuit<Fp, STEP> {
     }
 
     /// Add common inputs
-    pub fn constant_inputs<'d>(&mut self, src: impl IntoIterator<Item=&'d [Fp; 2]>){
-        let mut new_inps : Vec<_> = src.into_iter().copied().collect();
+    pub fn constant_inputs<'d>(&mut self, src: impl IntoIterator<Item = &'d [Fp; 2]>) {
+        let mut new_inps: Vec<_> = src.into_iter().copied().collect();
         self.inputs.append(&mut new_inps);
     }
 
     /// Add common inputs with expected hash as check
-    pub fn constant_inputs_with_check<'d>(&mut self, src: impl IntoIterator<Item=&'d (Fp, Fp, Fp)> + Copy){
-
+    pub fn constant_inputs_with_check<'d>(
+        &mut self,
+        src: impl IntoIterator<Item = &'d (Fp, Fp, Fp)> + Copy,
+    ) {
         // align input and checks
         self.checks.resize(self.inputs.len(), None);
 
-        let mut new_inps : Vec<_> = src.into_iter().map(|(a, b, _)| [*a, *b]).collect();
+        let mut new_inps: Vec<_> = src.into_iter().map(|(a, b, _)| [*a, *b]).collect();
         self.inputs.append(&mut new_inps);
 
-        let mut new_checks : Vec<_> = src.into_iter().map(|(_, _, c)| Some(*c)).collect();
+        let mut new_checks: Vec<_> = src.into_iter().map(|(_, _, c)| Some(*c)).collect();
         self.checks.append(&mut new_checks);
     }
-
 }
 
 impl<Fp: Hashable, const STEP: usize> Circuit<Fp> for HashCircuit<Fp, STEP> {
@@ -132,13 +136,13 @@ impl<Fp: Hashable, const STEP: usize> Circuit<Fp> for HashCircuit<Fp, STEP> {
     }
 
     fn configure(meta: &mut ConstraintSystem<Fp>) -> Self::Config {
-        let state = [0; 3].map(|_| meta.advice_column());//id 0-2
+        let state = [0; 3].map(|_| meta.advice_column()); //id 0-2
         let partial_sbox = meta.advice_column(); //id 3
         let constants = [0; 6].map(|_| meta.fixed_column());
-        let s_table = meta.selector();
+        let s_table = meta.complex_selector();
 
-        let hash_table = [0; 4].map(|_| meta.advice_column());//id 4-7
-        let hash_table_aux = [0; 5].map(|_| meta.advice_column());//id 8-12
+        let hash_table = [0; 4].map(|_| meta.advice_column()); //id 4-7
+        let hash_table_aux = [0; 5].map(|_| meta.advice_column()); //id 8-12
         for col in hash_table_aux.iter().chain(hash_table[0..1].iter()) {
             meta.enable_equality(*col);
         }
@@ -148,6 +152,7 @@ impl<Fp: Hashable, const STEP: usize> Circuit<Fp> for HashCircuit<Fp, STEP> {
         let s_sponge_continue = meta.advice_column();
         meta.enable_equality(s_sponge_continue);
         let control_aux = meta.advice_column();
+        let control_step_range = meta.lookup_table_column();
 
         let state_in = &hash_table_aux[0..3];
         let state_for_next_in = &hash_table_aux[3..5];
@@ -166,20 +171,47 @@ impl<Fp: Hashable, const STEP: usize> Circuit<Fp> for HashCircuit<Fp, STEP> {
             ]
         });
 
+        meta.create_gate("control step", |meta| {
+            let s_enable = meta.query_selector(s_table);
+            let s_continue = meta.query_advice(s_sponge_continue, Rotation::cur());
+            let ctrl = meta.query_advice(control, Rotation::cur());
+            let ctrl_prev = meta.query_advice(control, Rotation::prev());
+
+            vec![
+                s_enable
+                    * s_continue
+                    * (ctrl + Expression::Constant(Fp::from_u128(STEP as u128)) - ctrl_prev),
+            ]
+        });
+
+        meta.lookup("control range check", |meta| {
+            let s_enable = meta.query_selector(s_table);
+            let s_continue = meta.query_advice(s_sponge_continue, Rotation::cur());
+            let ctrl = meta.query_advice(control, Rotation::prev());
+
+            vec![(
+                s_enable * (Expression::Constant(Fp::one()) - s_continue) * ctrl,
+                control_step_range,
+            )]
+        });
+
         meta.create_gate("input constrain", |meta| {
             let s_enable = meta.query_selector(s_table);
             let s_continue_hash = meta.query_advice(s_sponge_continue, Rotation::cur());
 
             // external input: if not new hash, input must add prev state
-            let mut ret : Vec<_> = state_in[1..].iter().zip(state_for_next_in.iter()).zip(hash_inp.iter())
-                .map(|((inp, prev_inp), ext_inp)|{
-
+            let mut ret: Vec<_> = state_in[1..]
+                .iter()
+                .zip(state_for_next_in.iter())
+                .zip(hash_inp.iter())
+                .map(|((inp, prev_inp), ext_inp)| {
                     let inp = meta.query_advice(*inp, Rotation::cur());
                     let prev_inp = meta.query_advice(*prev_inp, Rotation::prev());
                     let ext_inp = meta.query_advice(*ext_inp, Rotation::cur());
 
                     s_enable.clone() * (prev_inp * s_continue_hash.clone() + ext_inp - inp)
-                }).collect();
+                })
+                .collect();
 
             assert_eq!(hash_inp.len(), ret.len());
 
@@ -188,10 +220,13 @@ impl<Fp: Hashable, const STEP: usize> Circuit<Fp> for HashCircuit<Fp, STEP> {
             let inp_hash_init = meta.query_advice(control, Rotation::cur());
 
             // hash output: must inherit prev state or apply current control flag (for new hash)
-            ret.push(s_enable.clone() * (inp_hash.clone() - inp_hash_init) * (inp_hash.clone() - inp_hash_prev.clone()));
+            ret.push(
+                s_enable.clone()
+                    * (inp_hash.clone() - inp_hash_init)
+                    * (inp_hash.clone() - inp_hash_prev.clone()),
+            );
             ret.push(s_enable * s_continue_hash * (inp_hash - inp_hash_prev));
             ret
-            
         });
 
         HashConfig {
@@ -206,6 +241,7 @@ impl<Fp: Hashable, const STEP: usize> Circuit<Fp> for HashCircuit<Fp, STEP> {
             hash_table_aux,
             control_aux,
             constants,
+            control_step_range,
             s_table,
             s_sponge_continue,
         }
@@ -227,6 +263,22 @@ impl<Fp: Hashable, const STEP: usize> Circuit<Fp> for HashCircuit<Fp, STEP> {
                 )?;
 
                 Ok([c0])
+            },
+        )?;
+
+        layouter.assign_table(
+            || "STEP range check",
+            |mut table| {
+                (0..STEP + 1).into_iter().try_for_each(|i| {
+                    table
+                        .assign_cell(
+                            || "STEP range check",
+                            config.control_step_range,
+                            i,
+                            || Value::known(Fp::from_u128(i as u128)),
+                        )
+                        .map(|_| ())
+                })
             },
         )?;
 
@@ -265,7 +317,12 @@ impl<Fp: Hashable, const STEP: usize> Circuit<Fp> for HashCircuit<Fp, STEP> {
                 }
 
                 for col in config.hash_table_aux {
-                    region.assign_advice(|| "dummy aux inputs", col, 0, || Value::known(Fp::zero()))?;
+                    region.assign_advice(
+                        || "dummy aux inputs",
+                        col,
+                        0,
+                        || Value::known(Fp::zero()),
+                    )?;
                 }
 
                 region.assign_advice(
@@ -286,10 +343,11 @@ impl<Fp: Hashable, const STEP: usize> Circuit<Fp> for HashCircuit<Fp, STEP> {
                 region.constrain_equal(c_ctrl.cell(), constants_cell[0].cell())?;
 
                 let mut is_new_sponge = true;
-                let mut state : [Fp; 3] = [Fp::zero(); 3];
+                let mut state: [Fp; 3] = [Fp::zero(); 3];
 
-                for (i, ((inp, control), check)) in inputs_i.zip(controls_i).zip(checks_i).enumerate() {
-
+                for (i, ((inp, control), check)) in
+                    inputs_i.zip(controls_i).zip(checks_i).enumerate()
+                {
                     let control = control.copied().unwrap_or_else(Fp::zero);
 
                     if is_new_sponge {
@@ -300,10 +358,10 @@ impl<Fp: Hashable, const STEP: usize> Circuit<Fp> for HashCircuit<Fp, STEP> {
                         .map(|[a, b]| [*a, *b])
                         .unwrap_or_else(|| [Fp::zero(), Fp::zero()]);
 
-                    state.iter_mut().skip(1).zip(inp).for_each(|(s, inp)|{
+                    state.iter_mut().skip(1).zip(inp).for_each(|(s, inp)| {
                         if is_new_sponge {
                             *s = inp;
-                        }else {
+                        } else {
                             *s += inp;
                         }
                     });
@@ -358,7 +416,7 @@ impl<Fp: Hashable, const STEP: usize> Circuit<Fp> for HashCircuit<Fp, STEP> {
                             config.hash_table_aux[4],
                             offset,
                             || Value::known(state[2]),
-                        )?,                        
+                        )?,
                     ];
 
                     region.assign_advice(
@@ -379,7 +437,7 @@ impl<Fp: Hashable, const STEP: usize> Circuit<Fp> for HashCircuit<Fp, STEP> {
                         || format!("state continue control_{}", i),
                         config.s_sponge_continue,
                         offset,
-                        || Value::known(if is_new_sponge {Fp::zero()} else {Fp::one()}),
+                        || Value::known(if is_new_sponge { Fp::zero() } else { Fp::one() }),
                     )?;
 
                     region.assign_advice(
@@ -396,7 +454,7 @@ impl<Fp: Hashable, const STEP: usize> Circuit<Fp> for HashCircuit<Fp, STEP> {
                         || Value::known(inp[1]),
                     )?;
 
-                    is_new_sponge = control < Fp::from_u128(STEP as u128);
+                    is_new_sponge = control <= Fp::from_u128(STEP as u128);
 
                     //we directly specify the init state of permutation
                     states_in.push(c_start.map(StateWord::from));
@@ -426,7 +484,7 @@ impl<Fp: Hashable, const STEP: usize> Circuit<Fp> for HashCircuit<Fp, STEP> {
             || "final state dummy",
             |mut region| {
                 for (state, final_state) in states_out.iter().zip(chip_finals.iter()) {
-                    for (s_cell, final_cell) in state.iter().zip(final_state.iter()){
+                    for (s_cell, final_cell) in state.iter().zip(final_state.iter()) {
                         region.constrain_equal(s_cell.cell(), final_cell.cell())?;
                     }
                 }
@@ -485,7 +543,7 @@ mod tests {
         assert_eq!(
             format!("{:?}", h),
             "0x066397f309d55f6caf6419cbb4120f5ada8e54254061b4b448359de388ab5526"
-        );        
+        );
     }
 
     use halo2_proofs::dev::MockProver;
@@ -512,7 +570,6 @@ mod tests {
             .unwrap();
     }
 
-    
     #[test]
     fn poseidon_hash_circuit() {
         let message1 = [
@@ -542,10 +599,7 @@ mod tests {
             Fr::from_str_vartime("2").unwrap(),
         ];
 
-        let message2 = [
-            Fr::from_str_vartime("50331648").unwrap(),
-            Fr::zero(),
-        ];
+        let message2 = [Fr::from_str_vartime("50331648").unwrap(), Fr::zero()];
 
         let k = 8;
         let circuit = HashCircuit {
@@ -556,6 +610,14 @@ mod tests {
         };
         let prover = MockProver::run(k, &circuit, vec![]).unwrap();
         assert_eq!(prover.verify(), Ok(()));
-    }
 
+        let circuit = HashCircuit {
+            calcs: 4,
+            inputs: vec![message1, message2, message1],
+            controls: vec![Fr::from_u128(64), Fr::from_u128(32), Fr::zero()],
+            checks: Vec::new(),
+        };
+        let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+        assert_eq!(prover.verify(), Ok(()));
+    }
 }

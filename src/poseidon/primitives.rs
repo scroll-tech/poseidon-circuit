@@ -212,7 +212,7 @@ impl<F: FieldExt, S: Spec<F, T, RATE>, const T: usize, const RATE: usize>
 
         let mode = Absorbing([None; RATE]);
         let mut state = [F::zero(); T];
-        state[(RATE + layout)%T] = initial_capacity_element;
+        state[(RATE + layout) % T] = initial_capacity_element;
 
         Sponge {
             mode,
@@ -226,7 +226,7 @@ impl<F: FieldExt, S: Spec<F, T, RATE>, const T: usize, const RATE: usize>
 
     /// add the capacity into current position of output
     pub(crate) fn update_capacity(&mut self, capacity_element: F) {
-        self.state[(RATE + self.layout)%T] += capacity_element;
+        self.state[(RATE + self.layout) % T] += capacity_element;
     }
 
     /// Absorbs an element into the sponge.
@@ -368,7 +368,6 @@ impl<F: FieldExt, const RATE: usize, const L: usize> Domain<F, RATE> for Constan
     }
 }
 
-
 /// A Poseidon hash function used with variable input length, this is iden3's specifications
 #[derive(Clone, Copy, Debug)]
 pub struct VariableLengthIden3;
@@ -387,14 +386,13 @@ impl<F: FieldExt, const RATE: usize> Domain<F, RATE> for VariableLengthIden3 {
 
     fn padding(input_len: usize) -> Self::Padding {
         let k = input_len % RATE;
-        iter::repeat(F::zero()).take(if k == 0 { 0 } else {RATE - k})
+        iter::repeat(F::zero()).take(if k == 0 { 0 } else { RATE - k })
     }
 
     fn layout(width: usize) -> usize {
         <ConstantLengthIden3<1> as Domain<F, RATE>>::layout(width)
     }
 }
-
 
 /// A Poseidon hash function, built around a sponge.
 pub struct Hash<
@@ -436,7 +434,7 @@ impl<F: FieldExt, S: Spec<F, T, RATE>, D: Domain<F, RATE>, const T: usize, const
     /// help permute a state
     pub fn permute(&self, state: &mut [F; T]) {
         permute::<F, S, T, RATE>(state, &self.sponge.mds_matrix, &self.sponge.round_constants);
-    }    
+    }
 }
 
 impl<F: FieldExt, S: Spec<F, T, RATE>, const T: usize, const RATE: usize, const L: usize>
@@ -513,11 +511,10 @@ mod tests {
 
     #[test]
     fn hasher_permute_equivalence() {
-
         let message = [Fp::from(6), Fp::from(42)];
         let hasher = Hash::<_, OrchardNullifier, ConstantLength<2>, 3, 2>::init();
         // The result should be equivalent to just directly applying the permutation and
-        // taking the first state element as the output.        
+        // taking the first state element as the output.
         let mut state = [Fp::from(6), Fp::from(42), Fp::from_u128(2 << 64)];
 
         hasher.permute(&mut state);
