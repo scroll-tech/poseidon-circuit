@@ -112,16 +112,15 @@ impl<Fp: Hashable, const STEP: usize> HashCircuit<Fp, STEP> {
     /// Add common inputs with expected hash as check
     pub fn constant_inputs_with_check<'d>(
         &mut self,
-        src: impl IntoIterator<Item = &'d (Fp, Fp, Fp)> + Copy,
+        src: impl IntoIterator<Item = &'d (Fp, Fp, Fp)>,
     ) {
         // align input and checks
         self.checks.resize(self.inputs.len(), None);
 
-        let mut new_inps: Vec<_> = src.into_iter().map(|(a, b, _)| [*a, *b]).collect();
-        self.inputs.append(&mut new_inps);
-
-        let mut new_checks: Vec<_> = src.into_iter().map(|(_, _, c)| Some(*c)).collect();
-        self.checks.append(&mut new_checks);
+        for (a, b, c) in src {
+            self.inputs.push([*a, *b]);
+            self.checks.push(Some(*c));
+        }
     }
 }
 
