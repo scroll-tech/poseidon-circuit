@@ -73,7 +73,8 @@ pub struct HashConfig<Fp: FieldExt> {
 }
 
 impl<Fp: FieldExt> HashConfig<Fp> {
-    pub(crate) fn commitment_index(&self) -> [usize; 4] {
+    /// obtain the commitment index of hash table
+    pub fn commitment_index(&self) -> [usize; 4] {
         self.hash_table.map(|col| col.index())
     }
 }
