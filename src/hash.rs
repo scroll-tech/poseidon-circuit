@@ -34,12 +34,14 @@ pub trait Hashable: FieldExt {
 pub trait MessageHashable: Hashable {
     /// the domain type used for message hash
     type DomainType: Domain<Self, 2>;
-    /// hash message
-    fn hash_msg(msg: &[Self]) -> Self;
+    /// hash message, if cap is not provided, it commonly use the len of msg
+    fn hash_msg(msg: &[Self], cap: Option<u64>) -> Self;
+    /// init a hasher used for hash message
+    fn msg_hasher(
+    ) -> Hash<Self, <Self as Hashable>::SpecType, <Self as MessageHashable>::DomainType, 3, 2> {
+        Hash::<Self, <Self as Hashable>::SpecType, <Self as MessageHashable>::DomainType, 3, 2>::init()
+    }
 }
-
-type Poseidon = Hash<Fr, P128Pow5T3<Fr>, ConstantLengthIden3<2>, 3, 2>;
-type PoseidonBytes = Hash<Fr, P128Pow5T3<Fr>, VariableLengthIden3, 3, 2>;
 
 impl Hashable for Fr {
     type SpecType = P128Pow5T3<Self>;
@@ -47,6 +49,14 @@ impl Hashable for Fr {
 
     fn hash(inp: [Self; 2]) -> Self {
         Self::hasher().hash(inp)
+    }
+}
+
+impl MessageHashable for Fr {
+    type DomainType = VariableLengthIden3;
+
+    fn hash_msg(msg: &[Self], cap: Option<u64>) -> Self {
+        Self::msg_hasher().hash_with_cap(msg, cap.unwrap_or(msg.len() as u64))
     }
 }
 
@@ -514,22 +524,20 @@ mod tests {
 
     #[test]
     fn poseidon_hash_bytes() {
-        let hasher = PoseidonBytes::init();
         let msg = vec![
             Fr::from_str_vartime("1").unwrap(),
             Fr::from_str_vartime("2").unwrap(),
             Fr::from_str_vartime("50331648").unwrap(), //0x3000000
         ];
 
-        let supposed_bytes = 45;
+        let supposed_bytes = 45u64;
 
-        let h = hasher.hash_with_cap(&msg, supposed_bytes);
+        let h = Fr::hash_msg(&msg, Some(supposed_bytes));
         assert_eq!(
             format!("{:?}", h),
             "0x212b546f9c67c4fdcba131035644aa1d8baa8943f84b0a27e8f65b5bd532213e"
         );
 
-        let hasher = PoseidonBytes::init();
         let msg = vec![
             Fr::from_str_vartime("1").unwrap(),
             Fr::from_str_vartime("2").unwrap(),
@@ -537,9 +545,9 @@ mod tests {
             Fr::zero(),
         ];
 
-        let supposed_bytes = 50;
+        let supposed_bytes = 50u64;
 
-        let h = hasher.hash_with_cap(&msg, supposed_bytes);
+        let h = Fr::hash_msg(&msg, Some(supposed_bytes));
         assert_eq!(
             format!("{:?}", h),
             "0x066397f309d55f6caf6419cbb4120f5ada8e54254061b4b448359de388ab5526"
