@@ -74,7 +74,7 @@ use halo2_proofs::{
 pub struct HashConfig<Fp: FieldExt> {
     permute_config: Pow5Config<Fp, 3, 2>,
     hash_table: [Column<Advice>; 4],
-    hash_table_aux: [Column<Advice>; 5],
+    hash_table_aux: [Column<Advice>; 6],
     control_aux: Column<Advice>,
     s_sponge_continue: Column<Advice>,
     constants: [Column<Fixed>; 6],
@@ -152,7 +152,7 @@ impl<Fp: Hashable, const STEP: usize> Circuit<Fp> for HashCircuit<Fp, STEP> {
         let s_table = meta.complex_selector();
 
         let hash_table = [0; 4].map(|_| meta.advice_column()); //id 4-7
-        let hash_table_aux = [0; 5].map(|_| meta.advice_column()); //id 8-12
+        let hash_table_aux = [0; 6].map(|_| meta.advice_column()); //id 8-12
         for col in hash_table_aux.iter().chain(hash_table[0..1].iter()) {
             meta.enable_equality(*col);
         }
@@ -166,8 +166,9 @@ impl<Fp: Hashable, const STEP: usize> Circuit<Fp> for HashCircuit<Fp, STEP> {
 
         let state_in = &hash_table_aux[0..3];
         let state_for_next_in = &hash_table_aux[3..5];
-        let hash_out = hash_table[0];
+        let hash_out = hash_table_aux[5];
         let hash_inp = &hash_table[1..3];
+        let hash_index = hash_table[0];
 
         meta.create_gate("control constrain", |meta| {
             let s_enable = meta.query_selector(s_table);
@@ -203,6 +204,21 @@ impl<Fp: Hashable, const STEP: usize> Circuit<Fp> for HashCircuit<Fp, STEP> {
                 s_enable * (Expression::Constant(Fp::one()) - s_continue) * ctrl,
                 control_step_range,
             )]
+        });
+
+        meta.create_gate("hash index constrain", |meta| {
+            let s_enable = meta.query_selector(s_table);
+            let s_continue_hash = meta.query_advice(s_sponge_continue, Rotation::cur());
+            let hash_ind = meta.query_advice(hash_index, Rotation::cur());
+            let hash_prev = meta.query_advice(hash_index, Rotation::prev());
+            let hash_out = meta.query_advice(hash_out, Rotation::prev());
+
+            vec![
+                s_enable.clone() * s_continue_hash.clone() * (hash_ind - hash_prev.clone()),
+                s_enable
+                    * (Expression::Constant(Fp::one()) - s_continue_hash)
+                    * (hash_out - hash_prev),
+            ]
         });
 
         meta.create_gate("input constrain", |meta| {
@@ -353,15 +369,19 @@ impl<Fp: Hashable, const STEP: usize> Circuit<Fp> for HashCircuit<Fp, STEP> {
                 region.constrain_equal(c_ctrl.cell(), constants_cell[0].cell())?;
 
                 let mut is_new_sponge = true;
+                let mut process_start = 0;
+                let mut offset = 1;
                 let mut state: [Fp; 3] = [Fp::zero(); 3];
 
                 for (i, ((inp, control), check)) in
                     inputs_i.zip(controls_i).zip(checks_i).enumerate()
                 {
                     let control = control.copied().unwrap_or_else(Fp::zero);
+                    offset = i + 1;
 
                     if is_new_sponge {
                         state[0] = control;
+                        process_start = offset;
                     }
 
                     let inp = inp
@@ -376,7 +396,6 @@ impl<Fp: Hashable, const STEP: usize> Circuit<Fp> for HashCircuit<Fp, STEP> {
                         }
                     });
 
-                    let offset = i + 1;
                     let state_start = state;
                     hash_helper.permute(&mut state); //here we calculate the hash
 
@@ -408,10 +427,11 @@ impl<Fp: Hashable, const STEP: usize> Circuit<Fp> for HashCircuit<Fp, STEP> {
                         )?,
                     ];
 
+                    let current_hash = state[0];
                     let c_end = [
                         region.assign_advice(
                             || format!("state output hash_{}", i),
-                            config.hash_table[0],
+                            config.hash_table_aux[5],
                             offset,
                             || Value::known(state[0]),
                         )?,
@@ -458,7 +478,7 @@ impl<Fp: Hashable, const STEP: usize> Circuit<Fp> for HashCircuit<Fp, STEP> {
                     )?;
 
                     region.assign_advice(
-                        || format!("hahs input second_{}", i),
+                        || format!("hash input second_{}", i),
                         config.hash_table[2],
                         offset,
                         || Value::known(inp[1]),
@@ -466,11 +486,36 @@ impl<Fp: Hashable, const STEP: usize> Circuit<Fp> for HashCircuit<Fp, STEP> {
 
                     is_new_sponge = control <= Fp::from_u128(STEP as u128);
 
+                    //fill all the hash_table[0] with result hash
+                    if is_new_sponge {
+                        (process_start..offset + 1).try_for_each(|ith| {
+                            region
+                                .assign_advice(
+                                    || format!("hash index_{}", ith),
+                                    config.hash_table[0],
+                                    ith,
+                                    || Value::known(current_hash),
+                                )
+                                .map(|_| ())
+                        })?;
+                    }
+
                     //we directly specify the init state of permutation
                     states_in.push(c_start.map(StateWord::from));
                     states_out.push(c_end.map(StateWord::from));
                 }
 
+                // enforce the last row is "not continue", so user can not put a variable
+                // message till the last row but this should be acceptable (?)
+                let c_last_ctrl = region.assign_advice(
+                    || "control sponge continue last",
+                    config.s_sponge_continue,
+                    offset,
+                    || Value::known(Fp::zero()),
+                )?;
+
+                // contraint 0 to tail line
+                region.constrain_equal(c_last_ctrl.cell(), constants_cell[0].cell())?;
                 Ok((states_in, states_out))
             },
         )?;
