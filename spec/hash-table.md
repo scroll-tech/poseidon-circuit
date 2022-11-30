@@ -23,7 +23,7 @@ Compute the digest of two message words, as in Merkle trees. This type of entrie
 
 Compute the digest of a variable-length message. One such entry is composed of consecutive rows with the same digest value, and where the control flag is not 0.
 
-The message is chunked into `W` words of `STEP/2` bytes packed into field elements. The words are given two-by-two on consecutive rows in the table, absorbing `STEP` bytes per row. The control flag on a given row indicates the number of message bytes remaining in the current and following rows. On the last row, `control == STEP`.
+The message is chunked into `W` words of `STEP/2` bytes packed into field elements. The words are given two-by-two on consecutive rows in the table, absorbing `STEP` bytes per row. The control flag on a given row indicates the number of message bytes remaining in the current and following rows. On the last row, `control <= STEP`.
 
 
 ## Internal Table (hash_table_aux)
