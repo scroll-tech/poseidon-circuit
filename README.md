@@ -2,7 +2,22 @@
 
 Poseidon hash circuit and primitives. It integrated several poseidon hash schemes from [zcash](https://github.com/zcash/halo2/tree/main/halo2_gadgets/src/poseidon) and [iden3](https://github.com/iden3/go-iden3-crypto/tree/master/poseidon) and support sponge progress for hashing messages in any length.
 
+
+## Implemented Hash Function
+
+- Poseidon ([paper](https://eprint.iacr.org/2019/458.pdf)).
+- Collision and second preimage resistance target: 128 bits.
+- On the BN254 scalar field.
+- S-box: x^5.
+- Capacity: 1 element.
+- Rate: 2 elements.
+- Full rounds: 8.
+- Partial rounds (S-box on the first "capacity" state): 57.
+
+
 ## Usage
+
+To connect to the hash circuit, see `spec/hash-table.md`.
 
 The circuit code can be implied with field which have satisified `Hashable` trait and currently only `hash-circuit::Bn256Fr` (the alias of `halo2_proofs::halo2curves::bn256::Fr`) has satisified this trait.
 
