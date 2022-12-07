@@ -1,8 +1,9 @@
-pub(crate) mod fp;
 pub(crate) use halo2_proofs::halo2curves::bn256::Fr as Fp;
 
 use super::p128pow5t3::P128Pow5T3Constants;
 use super::Mds;
+
+pub(crate) mod fp;
 
 impl P128Pow5T3Constants for Fp {
     fn partial_rounds() -> usize {
@@ -22,8 +23,55 @@ impl P128Pow5T3Constants for Fp {
 
 #[cfg(test)]
 mod tests {
+    use std::marker::PhantomData;
+
+    use crate::poseidon::primitives::p128pow5t3::P128Pow5T3;
+    use crate::poseidon::primitives::Spec;
 
     use super::*;
+
+    /// The same Poseidon specification as poseidon::P128Pow5T3, but constructed
+    /// such that its constants will be generated at runtime.
+    #[derive(Debug)]
+    pub struct P128Pow5T3Gen<F: P128Pow5T3Constants>(PhantomData<F>);
+
+    impl<F: P128Pow5T3Constants> P128Pow5T3Gen<F> {
+        pub fn new() -> Self {
+            P128Pow5T3Gen(PhantomData::default())
+        }
+    }
+
+    impl<F: P128Pow5T3Constants> Spec<F, 3, 2> for P128Pow5T3Gen<F> {
+        fn full_rounds() -> usize {
+            P128Pow5T3::<F>::full_rounds()
+        }
+
+        fn partial_rounds() -> usize {
+            P128Pow5T3::<F>::partial_rounds()
+        }
+
+        fn sbox(val: F) -> F {
+            P128Pow5T3::<F>::sbox(val)
+        }
+
+        fn secure_mds() -> usize {
+            0
+        }
+
+        // fn constants(): default implementation that generates the parameters.
+    }
+
+    #[test]
+    fn verify_constants_generation() {
+        let (round_constants, mds, mds_inv) = P128Pow5T3Gen::<Fp>::constants();
+        let (round_constants2, mds2, mds_inv2) = P128Pow5T3::<Fp>::constants();
+
+        assert_eq!(round_constants.len(), 57 + 8);
+        assert_eq!(round_constants, round_constants2);
+        assert_eq!(mds, mds2);
+        assert_eq!(mds_inv, mds_inv2);
+    }
+
     #[test]
     fn verify_constants() {
         let c = fp::ROUND_CONSTANTS.to_vec();

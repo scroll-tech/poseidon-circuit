@@ -9,7 +9,7 @@ The hash circuit exposes a table containing multiple inputs/output pairs. This t
 | var-len digest  | word 0           | word 1          |     2000        |
 | var-len digest  | word 2           | word 3          |     1968        |
 |      ...        |      ...         |     ...         |     ...         |
-| var-len digest  | word W-2         | word W-1        |      32         |
+| var-len digest  | word W-2         | word W-1        |      16         |
 |                 |                  |                 |                 |
 
 
