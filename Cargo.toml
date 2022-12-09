@@ -11,6 +11,10 @@ lazy_static = "1.4.0"
 thiserror = "1.0"
 bitvec = "0.22"
 
+[patch.crates-io]
+# temporary solution to funty@1.2.0 being yanked, tracking issue: https://github.com/ferrilab/funty/issues/7
+funty = { git = "https://github.com/ferrilab/funty/", rev = "7ef0d890fbcd8b3def1635ac1a877fc298488446" }
+
 [features]
 # printout the layout of circuits for demo and some unittests
 print_layout = ["halo2_proofs/dev-graph"]
