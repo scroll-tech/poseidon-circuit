@@ -1,3 +1,12 @@
+// Parameters generated from:
+//
+// https://github.com/scroll-tech/hash-circuit/blob/e3841d0828e577b80c9cd84aa71f79adc96756fc/src/poseidon/primitives.rs#L61
+//
+// or equivalently:
+//
+// https://extgit.iaik.tugraz.at/krypto/hadeshash/-/blob/b5434fd2b2785926dd1dd386efbef167da57c064/code/poseidonperm_x5_254_3.sage
+//
+
 use halo2_proofs::arithmetic::Field;
 use halo2_proofs::halo2curves::{bn256::Fr as Fp, group::ff::PrimeField};
 use lazy_static::lazy_static;
