@@ -177,8 +177,8 @@ impl<Fp: Hashable, const STEP: usize> Circuit<Fp> for HashCircuit<Fp, STEP> {
             let s_continue = meta.query_advice(s_sponge_continue, Rotation::cur());
 
             vec![
-                s_enable.clone() * ctrl * (Expression::Constant(Fp::one()) - ctrl_bool),
-                s_enable * s_continue.clone() * (Expression::Constant(Fp::one()) - s_continue),
+                s_enable.clone() * ctrl * (Expression::Constant(Fp::one()) - ctrl_bool.clone()),
+                s_enable * s_continue * (Expression::Constant(Fp::one()) - ctrl_bool),
             ]
         });
 
