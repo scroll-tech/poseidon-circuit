@@ -247,9 +247,9 @@ impl<Fp: Hashable, const STEP: usize> Circuit<Fp> for HashCircuit<Fp, STEP> {
 
             // hash output: must inherit prev state or apply current control flag (for new hash)
             ret.push(
-                s_enable.clone() 
+                s_enable.clone()
                     * (Expression::Constant(Fp::one()) - s_continue_hash.clone())
-                    * (inp_hash.clone() - inp_hash_init)
+                    * (inp_hash.clone() - inp_hash_init),
             );
             ret.push(s_enable * s_continue_hash * (inp_hash - inp_hash_prev));
             ret

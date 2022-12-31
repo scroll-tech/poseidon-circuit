@@ -627,21 +627,10 @@ impl<F: FieldExt, const WIDTH: usize> Pow5State<F, WIDTH> {
         initial_state: &State<StateWord<F>, WIDTH>,
     ) -> Result<Self, Error> {
         let load_state_word = |i: usize| {
-            if initial_state[i].0.value().is_none() {
-                let dummy_word = region.assign_advice(
-                    || format!("unset state_{}", i),
-                    config.state[i],
-                    0,
-                    || Value::known(F::zero()),
-                )?;
-                region.constrain_equal(dummy_word.cell(), initial_state[i].cell())?;
-                Ok(StateWord(dummy_word))
-            } else {
-                initial_state[i]
-                    .0
-                    .copy_advice(|| format!("load state_{}", i), region, config.state[i], 0)
-                    .map(StateWord)
-            }
+            initial_state[i]
+                .0
+                .copy_advice(|| format!("load state_{}", i), region, config.state[i], 0)
+                .map(StateWord)
         };
 
         let state: Result<Vec<_>, _> = (0..WIDTH).map(load_state_word).collect();
