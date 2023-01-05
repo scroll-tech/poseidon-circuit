@@ -1,4 +1,4 @@
-# hash-circuit
+# poseidon-hash-circuit
 
 Poseidon hash circuit and primitives. It integrated several poseidon hash schemes from [zcash](https://github.com/zcash/halo2/tree/main/halo2_gadgets/src/poseidon) and [iden3](https://github.com/iden3/go-iden3-crypto/tree/master/poseidon) and support sponge progress for hashing messages in any length.
 
