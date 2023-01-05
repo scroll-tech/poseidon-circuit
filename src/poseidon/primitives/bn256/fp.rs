@@ -1,6 +1,6 @@
 // Parameters generated from:
 //
-// https://github.com/scroll-tech/hash-circuit/blob/e3841d0828e577b80c9cd84aa71f79adc96756fc/src/poseidon/primitives.rs#L61
+// https://github.com/scroll-tech/poseidon-circuit/blob/e3841d0828e577b80c9cd84aa71f79adc96756fc/src/poseidon/primitives.rs#L61
 //
 // or equivalently:
 //

@@ -1,5 +1,5 @@
 [package]
-name = "hash-circuit"
+name = "poseidon-circuit"
 version = "0.1.0"
 edition = "2021"
 
