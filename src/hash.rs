@@ -94,14 +94,17 @@ impl<Fp: Hashable> HashConfig<Fp> {
     }
 
     /// build configure for sub circuit
-    pub fn configure_sub(meta: &mut ConstraintSystem<Fp>, step: usize) -> Self {
-        let state = [0; 3].map(|_| meta.advice_column()); //id 0-2
-        let partial_sbox = meta.advice_column(); //id 3
+    pub fn configure_sub(
+        meta: &mut ConstraintSystem<Fp>,
+        hash_table: [Column<Advice>; 4],
+        step: usize,
+    ) -> Self {
+        let state = [0; 3].map(|_| meta.advice_column());
+        let partial_sbox = meta.advice_column();
         let constants = [0; 6].map(|_| meta.fixed_column());
         let s_table = meta.complex_selector();
 
-        let hash_table = [0; 4].map(|_| meta.advice_column()); //id 4-7
-        let hash_table_aux = [0; 6].map(|_| meta.advice_column()); //id 8-12
+        let hash_table_aux = [0; 6].map(|_| meta.advice_column());
         for col in hash_table_aux.iter().chain(hash_table[0..1].iter()) {
             meta.enable_equality(*col);
         }
@@ -265,6 +268,29 @@ impl<Fp: Hashable, const STEP: usize> HashCircuit<Fp, STEP> {
             self.inputs.push([*a, *b]);
             self.checks.push(Some(*c));
         }
+    }
+
+    /// Add a series of inputs from a field stream
+    pub fn stream_inputs<'d>(
+        &mut self,
+        src: impl IntoIterator<Item = &'d [Fp; 2]>,
+        ctrl_start: u64,
+    ) {
+        let mut new_inps: Vec<_> = src.into_iter().copied().collect();
+        let mut ctrl_series: Vec<_> = std::iter::successors(Some(ctrl_start), |n| {
+            if *n > (STEP as u64) {
+                Some(n - STEP as u64)
+            } else {
+                None
+            }
+        })
+        .map(Fp::from)
+        .take(new_inps.len())
+        .collect();
+
+        assert_eq!(new_inps.len(), ctrl_series.len());
+        self.inputs.append(&mut new_inps);
+        self.controls.append(&mut ctrl_series);
     }
 
     /// load the whole circuit
@@ -555,7 +581,8 @@ impl<Fp: Hashable, const STEP: usize> Circuit<Fp> for HashCircuit<Fp, STEP> {
     }
 
     fn configure(meta: &mut ConstraintSystem<Fp>) -> Self::Config {
-        Self::Config::configure_sub(meta, STEP)
+        let hash_tbl = [0; 4].map(|_| meta.advice_column());
+        Self::Config::configure_sub(meta, hash_tbl, STEP)
     }
 
     fn synthesize(
