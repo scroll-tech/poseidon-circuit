@@ -82,70 +82,19 @@ pub struct HashConfig<Fp: FieldExt> {
     s_table: Selector,
 }
 
-impl<Fp: FieldExt> HashConfig<Fp> {
+impl<Fp: Hashable> HashConfig<Fp> {
     /// obtain the commitment index of hash table
     pub fn commitment_index(&self) -> [usize; 4] {
         self.hash_table.map(|col| col.index())
     }
-}
 
-/// Hash circuit
-#[derive(Clone, Default)]
-pub struct HashCircuit<Fp, const STEP: usize> {
-    /// the records in circuits
-    pub calcs: usize,
-    /// the input messages for hashes
-    pub inputs: Vec<[Fp; 2]>,
-    /// the control flag for each permutation
-    pub controls: Vec<Fp>,
-    /// the expected hash output for checking
-    pub checks: Vec<Option<Fp>>,
-}
-
-impl<Fp: Hashable, const STEP: usize> HashCircuit<Fp, STEP> {
-    /// create circuit from traces
-    pub fn new(calcs: usize) -> Self {
-        Self {
-            calcs,
-            inputs: Vec::new(),
-            controls: Vec::new(),
-            checks: Vec::new(),
-        }
+    /// obtain the hash_table columns
+    pub fn hash_tbl_cols(&self) -> [Column<Advice>; 4] {
+        self.hash_table
     }
 
-    /// Add common inputs
-    pub fn constant_inputs<'d>(&mut self, src: impl IntoIterator<Item = &'d [Fp; 2]>) {
-        let mut new_inps: Vec<_> = src.into_iter().copied().collect();
-        self.inputs.append(&mut new_inps);
-    }
-
-    /// Add common inputs with expected hash as check
-    pub fn constant_inputs_with_check<'d>(
-        &mut self,
-        src: impl IntoIterator<Item = &'d (Fp, Fp, Fp)>,
-    ) {
-        // align input and checks
-        self.checks.resize(self.inputs.len(), None);
-
-        for (a, b, c) in src {
-            self.inputs.push([*a, *b]);
-            self.checks.push(Some(*c));
-        }
-    }
-}
-
-impl<Fp: Hashable, const STEP: usize> Circuit<Fp> for HashCircuit<Fp, STEP> {
-    type Config = HashConfig<Fp>;
-    type FloorPlanner = SimpleFloorPlanner;
-
-    fn without_witnesses(&self) -> Self {
-        Self {
-            calcs: self.calcs,
-            ..Default::default()
-        }
-    }
-
-    fn configure(meta: &mut ConstraintSystem<Fp>) -> Self::Config {
+    /// build configure for sub circuit
+    pub fn configure_sub(meta: &mut ConstraintSystem<Fp>, step: usize) -> Self {
         let state = [0; 3].map(|_| meta.advice_column()); //id 0-2
         let partial_sbox = meta.advice_column(); //id 3
         let constants = [0; 6].map(|_| meta.fixed_column());
@@ -191,7 +140,7 @@ impl<Fp: Hashable, const STEP: usize> Circuit<Fp> for HashCircuit<Fp, STEP> {
             vec![
                 s_enable
                     * s_continue
-                    * (ctrl + Expression::Constant(Fp::from_u128(STEP as u128)) - ctrl_prev),
+                    * (ctrl + Expression::Constant(Fp::from_u128(step as u128)) - ctrl_prev),
             ]
         });
 
@@ -255,7 +204,7 @@ impl<Fp: Hashable, const STEP: usize> Circuit<Fp> for HashCircuit<Fp, STEP> {
             ret
         });
 
-        HashConfig {
+        Self {
             permute_config: Pow5Chip::configure::<Fp::SpecType>(
                 meta,
                 state,
@@ -272,11 +221,57 @@ impl<Fp: Hashable, const STEP: usize> Circuit<Fp> for HashCircuit<Fp, STEP> {
             s_sponge_continue,
         }
     }
+}
 
-    fn synthesize(
+/// Hash circuit
+#[derive(Clone, Default)]
+pub struct HashCircuit<Fp, const STEP: usize> {
+    /// the records in circuits
+    pub calcs: usize,
+    /// the input messages for hashes
+    pub inputs: Vec<[Fp; 2]>,
+    /// the control flag for each permutation
+    pub controls: Vec<Fp>,
+    /// the expected hash output for checking
+    pub checks: Vec<Option<Fp>>,
+}
+
+impl<Fp: Hashable, const STEP: usize> HashCircuit<Fp, STEP> {
+    /// create circuit from traces
+    pub fn new(calcs: usize) -> Self {
+        Self {
+            calcs,
+            inputs: Vec::new(),
+            controls: Vec::new(),
+            checks: Vec::new(),
+        }
+    }
+
+    /// Add common inputs
+    pub fn constant_inputs<'d>(&mut self, src: impl IntoIterator<Item = &'d [Fp; 2]>) {
+        let mut new_inps: Vec<_> = src.into_iter().copied().collect();
+        self.inputs.append(&mut new_inps);
+    }
+
+    /// Add common inputs with expected hash as check
+    pub fn constant_inputs_with_check<'d>(
+        &mut self,
+        src: impl IntoIterator<Item = &'d (Fp, Fp, Fp)>,
+    ) {
+        // align input and checks
+        self.checks.resize(self.inputs.len(), None);
+
+        for (a, b, c) in src {
+            self.inputs.push([*a, *b]);
+            self.checks.push(Some(*c));
+        }
+    }
+
+    /// load the whole circuit
+    pub fn load(
         &self,
-        config: Self::Config,
-        mut layouter: impl Layouter<Fp>,
+        config: HashConfig<Fp>,
+        layouter: &mut impl Layouter<Fp>,
     ) -> Result<(), Error> {
         let constants_cell = layouter.assign_region(
             || "constant heading",
@@ -525,12 +520,10 @@ impl<Fp: Hashable, const STEP: usize> Circuit<Fp> for HashCircuit<Fp, STEP> {
         for state in states_in {
             let chip = Pow5Chip::construct(config.permute_config.clone());
 
-            let final_state = <Pow5Chip<_, 3, 2> as PoseidonInstructions<
-                Fp,
-                Fp::SpecType,
-                3,
-                2,
-            >>::permute(&chip, &mut layouter, &state)?;
+            let final_state =
+                <Pow5Chip<_, 3, 2> as PoseidonInstructions<Fp, Fp::SpecType, 3, 2>>::permute(
+                    &chip, layouter, &state,
+                )?;
 
             chip_finals.push(final_state);
         }
@@ -547,6 +540,30 @@ impl<Fp: Hashable, const STEP: usize> Circuit<Fp> for HashCircuit<Fp, STEP> {
                 Ok(())
             },
         )
+    }
+}
+
+impl<Fp: Hashable, const STEP: usize> Circuit<Fp> for HashCircuit<Fp, STEP> {
+    type Config = HashConfig<Fp>;
+    type FloorPlanner = SimpleFloorPlanner;
+
+    fn without_witnesses(&self) -> Self {
+        Self {
+            calcs: self.calcs,
+            ..Default::default()
+        }
+    }
+
+    fn configure(meta: &mut ConstraintSystem<Fp>) -> Self::Config {
+        Self::Config::configure_sub(meta, STEP)
+    }
+
+    fn synthesize(
+        &self,
+        config: Self::Config,
+        mut layouter: impl Layouter<Fp>,
+    ) -> Result<(), Error> {
+        self.load(config, &mut layouter)
     }
 }
 
