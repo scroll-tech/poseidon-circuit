@@ -3,12 +3,8 @@
 use crate::poseidon::primitives::{
     ConstantLengthIden3, Domain, Hash, P128Pow5T3, Spec, VariableLengthIden3,
 };
+use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::halo2curves::bn256::Fr;
-use halo2_proofs::{arithmetic::FieldExt, circuit::Chip};
-
-trait PoseidonChip<Fp: FieldExt>: Chip<Fp> {
-    fn construct(config: &Self::Config) -> Self;
-}
 
 /// indicate an field can be hashed in merkle tree (2 Fields to 1 Field)
 pub trait Hashable: FieldExt {
@@ -62,16 +58,14 @@ impl MessageHashable for Fr {
 
 use crate::poseidon::{PoseidonInstructions, Pow5Chip, Pow5Config, StateWord, Var};
 use halo2_proofs::{
-    circuit::{Layouter, SimpleFloorPlanner, Value},
-    plonk::{
-        Advice, Circuit, Column, ConstraintSystem, Error, Expression, Fixed, Selector, TableColumn,
-    },
+    circuit::{Chip, Layouter, Value},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector, TableColumn},
     poly::Rotation,
 };
 
-/// The config for hash circuit
+/// The config for poseidon hash circuit
 #[derive(Clone, Debug)]
-pub struct HashConfig<Fp: FieldExt> {
+pub struct PoseidonHashConfig<Fp: FieldExt> {
     permute_config: Pow5Config<Fp, 3, 2>,
     hash_table: [Column<Advice>; 4],
     hash_table_aux: [Column<Advice>; 6],
@@ -82,7 +76,7 @@ pub struct HashConfig<Fp: FieldExt> {
     s_table: Selector,
 }
 
-impl<Fp: Hashable> HashConfig<Fp> {
+impl<Fp: Hashable> PoseidonHashConfig<Fp> {
     /// obtain the commitment index of hash table
     pub fn commitment_index(&self) -> [usize; 4] {
         self.hash_table.map(|col| col.index())
@@ -226,11 +220,9 @@ impl<Fp: Hashable> HashConfig<Fp> {
     }
 }
 
-/// Hash circuit
-#[derive(Clone, Default)]
-pub struct HashCircuit<Fp, const STEP: usize> {
-    /// the records in circuits
-    pub calcs: usize,
+/// Poseidon hash table
+#[derive(Clone, Default, Debug)]
+pub struct PoseidonHashTable<Fp> {
     /// the input messages for hashes
     pub inputs: Vec<[Fp; 2]>,
     /// the control flag for each permutation
@@ -239,17 +231,7 @@ pub struct HashCircuit<Fp, const STEP: usize> {
     pub checks: Vec<Option<Fp>>,
 }
 
-impl<Fp: Hashable, const STEP: usize> HashCircuit<Fp, STEP> {
-    /// create circuit from traces
-    pub fn new(calcs: usize) -> Self {
-        Self {
-            calcs,
-            inputs: Vec::new(),
-            controls: Vec::new(),
-            checks: Vec::new(),
-        }
-    }
-
+impl<Fp: FieldExt> PoseidonHashTable<Fp> {
     /// Add common inputs
     pub fn constant_inputs<'d>(&mut self, src: impl IntoIterator<Item = &'d [Fp; 2]>) {
         let mut new_inps: Vec<_> = src.into_iter().copied().collect();
@@ -275,11 +257,12 @@ impl<Fp: Hashable, const STEP: usize> HashCircuit<Fp, STEP> {
         &mut self,
         src: impl IntoIterator<Item = &'d [Fp; 2]>,
         ctrl_start: u64,
+        step: usize,
     ) {
         let mut new_inps: Vec<_> = src.into_iter().copied().collect();
         let mut ctrl_series: Vec<_> = std::iter::successors(Some(ctrl_start), |n| {
-            if *n > (STEP as u64) {
-                Some(n - STEP as u64)
+            if *n > (step as u64) {
+                Some(n - step as u64)
             } else {
                 None
             }
@@ -292,13 +275,33 @@ impl<Fp: Hashable, const STEP: usize> HashCircuit<Fp, STEP> {
         self.inputs.append(&mut new_inps);
         self.controls.append(&mut ctrl_series);
     }
+}
 
-    /// load the whole circuit
-    pub fn load(
-        &self,
-        config: HashConfig<Fp>,
-        layouter: &mut impl Layouter<Fp>,
-    ) -> Result<(), Error> {
+/// Represent the chip for Poseidon hash table
+#[derive(Debug)]
+pub struct PoseidonHashChip<'d, Fp: FieldExt, const STEP: usize> {
+    calcs: usize,
+    data: &'d PoseidonHashTable<Fp>,
+    config: PoseidonHashConfig<Fp>,
+}
+
+impl<'d, Fp: Hashable, const STEP: usize> PoseidonHashChip<'d, Fp, STEP> {
+    ///construct the chip
+    pub fn construct(
+        config: PoseidonHashConfig<Fp>,
+        data: &'d PoseidonHashTable<Fp>,
+        calcs: usize,
+    ) -> Self {
+        Self {
+            calcs,
+            data,
+            config,
+        }
+    }
+
+    /// load the table into circuit under the specified config
+    pub fn load(&self, layouter: &mut impl Layouter<Fp>) -> Result<(), Error> {
+        let config = &self.config;
         let constants_cell = layouter.assign_region(
             || "constant heading",
             |mut region| {
@@ -329,6 +332,7 @@ impl<Fp: Hashable, const STEP: usize> HashCircuit<Fp, STEP> {
             },
         )?;
 
+        let data = self.data;
         let (states_in, states_out) = layouter.assign_region(
             || "hash table",
             |mut region| {
@@ -338,20 +342,20 @@ impl<Fp: Hashable, const STEP: usize> HashCircuit<Fp, STEP> {
 
                 let dummy_input: [Option<&[Fp; 2]>; 1] = [None];
                 let dummy_item: [Option<&Fp>; 1] = [None];
-                let inputs_i = self
+                let inputs_i = data
                     .inputs
                     .iter()
                     .map(Some)
                     .chain(dummy_input.into_iter().cycle())
                     .take(self.calcs);
-                let controls_i = self
+                let controls_i = data
                     .controls
                     .iter()
                     .map(Some)
                     .chain(dummy_item.into_iter().cycle())
                     .take(self.calcs);
 
-                let checks_i = self
+                let checks_i = data
                     .checks
                     .iter()
                     .map(|i| i.as_ref())
@@ -569,28 +573,15 @@ impl<Fp: Hashable, const STEP: usize> HashCircuit<Fp, STEP> {
     }
 }
 
-impl<Fp: Hashable, const STEP: usize> Circuit<Fp> for HashCircuit<Fp, STEP> {
-    type Config = HashConfig<Fp>;
-    type FloorPlanner = SimpleFloorPlanner;
+impl<Fp: FieldExt, const STEP: usize> Chip<Fp> for PoseidonHashChip<'_, Fp, STEP> {
+    type Config = PoseidonHashConfig<Fp>;
+    type Loaded = PoseidonHashTable<Fp>;
 
-    fn without_witnesses(&self) -> Self {
-        Self {
-            calcs: self.calcs,
-            ..Default::default()
-        }
+    fn config(&self) -> &Self::Config {
+        &self.config
     }
-
-    fn configure(meta: &mut ConstraintSystem<Fp>) -> Self::Config {
-        let hash_tbl = [0; 4].map(|_| meta.advice_column());
-        Self::Config::configure_sub(meta, hash_tbl, STEP)
-    }
-
-    fn synthesize(
-        &self,
-        config: Self::Config,
-        mut layouter: impl Layouter<Fp>,
-    ) -> Result<(), Error> {
-        self.load(config, &mut layouter)
+    fn loaded(&self) -> &Self::Loaded {
+        self.data
     }
 }
 
@@ -598,6 +589,7 @@ impl<Fp: Hashable, const STEP: usize> Circuit<Fp> for HashCircuit<Fp, STEP> {
 mod tests {
     use super::*;
     use halo2_proofs::halo2curves::group::ff::PrimeField;
+    use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 
     #[test]
     fn poseidon_hash() {
@@ -644,7 +636,36 @@ mod tests {
     }
 
     use halo2_proofs::dev::MockProver;
-    type HashCircuit = super::HashCircuit<Fr, 32>;
+    const TEST_STEP: usize = 32;
+
+    // test circuit derived from table data
+    impl<Fp: Hashable> Circuit<Fp> for PoseidonHashTable<Fp> {
+        type Config = (PoseidonHashConfig<Fp>, usize);
+        type FloorPlanner = SimpleFloorPlanner;
+
+        fn without_witnesses(&self) -> Self {
+            Self {
+                ..Default::default()
+            }
+        }
+
+        fn configure(meta: &mut ConstraintSystem<Fp>) -> Self::Config {
+            let hash_tbl = [0; 4].map(|_| meta.advice_column());
+            (
+                PoseidonHashConfig::configure_sub(meta, hash_tbl, TEST_STEP),
+                4,
+            )
+        }
+
+        fn synthesize(
+            &self,
+            (config, max_rows): Self::Config,
+            mut layouter: impl Layouter<Fp>,
+        ) -> Result<(), Error> {
+            let chip = PoseidonHashChip::<Fp, TEST_STEP>::construct(config, self, max_rows);
+            chip.load(&mut layouter)
+        }
+    }
 
     #[cfg(feature = "print_layout")]
     #[test]
@@ -679,9 +700,8 @@ mod tests {
             Fr::from_str_vartime("3").unwrap(),
         ];
 
-        let k = 7;
-        let circuit = HashCircuit {
-            calcs: 2,
+        let k = 8;
+        let circuit = PoseidonHashTable {
             inputs: vec![message1, message2],
             ..Default::default()
         };
@@ -699,8 +719,7 @@ mod tests {
         let message2 = [Fr::from_str_vartime("50331648").unwrap(), Fr::zero()];
 
         let k = 8;
-        let circuit = HashCircuit {
-            calcs: 4,
+        let circuit = PoseidonHashTable {
             inputs: vec![message1, message2],
             controls: vec![Fr::from_u128(45), Fr::from_u128(13)],
             checks: vec![None, Some(Fr::from_str_vartime("15002881182751877599173281392790087382867290792048832034781070831698029191486").unwrap())],
@@ -708,8 +727,7 @@ mod tests {
         let prover = MockProver::run(k, &circuit, vec![]).unwrap();
         assert_eq!(prover.verify(), Ok(()));
 
-        let circuit = HashCircuit {
-            calcs: 4,
+        let circuit = PoseidonHashTable {
             inputs: vec![message1, message2, message1],
             controls: vec![Fr::from_u128(64), Fr::from_u128(32), Fr::zero()],
             checks: Vec::new(),
