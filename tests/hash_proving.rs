@@ -13,9 +13,39 @@ use halo2_proofs::poly::kzg::strategy::SingleStrategy;
 use halo2_proofs::transcript::{
     Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
 };
-use poseidon_circuit::{hash, DEFAULT_STEP};
+use halo2_proofs::{
+    circuit::{Layouter, SimpleFloorPlanner},
+    plonk::{Circuit, ConstraintSystem, Error},
+};
+use poseidon_circuit::{hash::*, DEFAULT_STEP};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
+
+struct TestCircuit(PoseidonHashTable<Fp>, usize);
+
+// test circuit derived from table data
+impl Circuit<Fp> for TestCircuit {
+    type Config = PoseidonHashConfig<Fp>;
+    type FloorPlanner = SimpleFloorPlanner;
+
+    fn without_witnesses(&self) -> Self {
+        Self(PoseidonHashTable::default(), self.1)
+    }
+
+    fn configure(meta: &mut ConstraintSystem<Fp>) -> Self::Config {
+        let hash_tbl = [0; 4].map(|_| meta.advice_column());
+        PoseidonHashConfig::configure_sub(meta, hash_tbl, DEFAULT_STEP)
+    }
+
+    fn synthesize(
+        &self,
+        config: Self::Config,
+        mut layouter: impl Layouter<Fp>,
+    ) -> Result<(), Error> {
+        let chip = PoseidonHashChip::<Fp, DEFAULT_STEP>::construct(config, &self.0, self.1);
+        chip.load(&mut layouter)
+    }
+}
 
 #[test]
 fn hash_circuit() {
@@ -29,11 +59,13 @@ fn hash_circuit() {
     ];
 
     let k = 7;
-    let circuit = hash::HashCircuit::<Fp, DEFAULT_STEP> {
-        inputs: vec![message1, message2],
-        calcs: 3,
-        ..Default::default()
-    };
+    let circuit = TestCircuit(
+        PoseidonHashTable {
+            inputs: vec![message1, message2],
+            ..Default::default()
+        },
+        3,
+    );
     let prover = MockProver::run(k, &circuit, vec![]).unwrap();
     assert_eq!(prover.verify(), Ok(()));
 }
@@ -42,29 +74,28 @@ fn hash_circuit() {
 fn vk_validity() {
     let params = Params::<Bn256>::unsafe_setup(8);
 
-    let circuit = hash::HashCircuit::<Fp, DEFAULT_STEP> {
-        calcs: 3,
-        ..Default::default()
-    };
+    let circuit = TestCircuit(PoseidonHashTable::default(), 3);
     let vk1 = keygen_vk(&params, &circuit).unwrap();
 
     let mut vk1_buf: Vec<u8> = Vec::new();
     vk1.write(&mut vk1_buf).unwrap();
 
-    let circuit = hash::HashCircuit::<Fp, DEFAULT_STEP> {
-        inputs: vec![
-            [
-                Fp::from_str_vartime("1").unwrap(),
-                Fp::from_str_vartime("2").unwrap(),
+    let circuit = TestCircuit(
+        PoseidonHashTable {
+            inputs: vec![
+                [
+                    Fp::from_str_vartime("1").unwrap(),
+                    Fp::from_str_vartime("2").unwrap(),
+                ],
+                [
+                    Fp::from_str_vartime("0").unwrap(),
+                    Fp::from_str_vartime("1").unwrap(),
+                ],
             ],
-            [
-                Fp::from_str_vartime("0").unwrap(),
-                Fp::from_str_vartime("1").unwrap(),
-            ],
-        ],
-        calcs: 3,
-        ..Default::default()
-    };
+            ..Default::default()
+        },
+        3,
+    );
     let vk2 = keygen_vk(&params, &circuit).unwrap();
 
     let mut vk2_buf: Vec<u8> = Vec::new();
@@ -81,20 +112,22 @@ fn proof_and_verify() {
     let os_rng = ChaCha8Rng::from_seed([101u8; 32]);
     let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
 
-    let circuit = hash::HashCircuit::<Fp, DEFAULT_STEP> {
-        inputs: vec![
-            [
-                Fp::from_str_vartime("1").unwrap(),
-                Fp::from_str_vartime("2").unwrap(),
+    let circuit = TestCircuit(
+        PoseidonHashTable {
+            inputs: vec![
+                [
+                    Fp::from_str_vartime("1").unwrap(),
+                    Fp::from_str_vartime("2").unwrap(),
+                ],
+                [
+                    Fp::from_str_vartime("0").unwrap(),
+                    Fp::from_str_vartime("1").unwrap(),
+                ],
             ],
-            [
-                Fp::from_str_vartime("0").unwrap(),
-                Fp::from_str_vartime("1").unwrap(),
-            ],
-        ],
-        calcs: 3,
-        ..Default::default()
-    };
+            ..Default::default()
+        },
+        4,
+    );
 
     let prover = MockProver::run(k, &circuit, vec![]).unwrap();
     assert_eq!(prover.verify(), Ok(()));
@@ -116,10 +149,7 @@ fn proof_and_verify() {
     let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof_script[..]);
     let verifier_params: ParamsVerifier<Bn256> = params.verifier_params().clone();
     let strategy = SingleStrategy::new(&params);
-    let circuit = hash::HashCircuit::<Fp, DEFAULT_STEP> {
-        calcs: 3,
-        ..Default::default()
-    };
+    let circuit = TestCircuit(PoseidonHashTable::default(), 4);
     let vk = keygen_vk(&params, &circuit).unwrap();
 
     assert!(
