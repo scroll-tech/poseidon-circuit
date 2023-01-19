@@ -32,7 +32,7 @@ hashes!(h03, 3);
 hashes!(h04, 4);
 hashes!(h05, 5);
 hashes!(h06, 6);
-hashes!(h07, 6);
+hashes!(h07, 7);
 
 fn vec_ref(bench: &mut Bencher) {
     bench.iter(|| Vec::from(&RNDFRS.as_slice()[..8]));
