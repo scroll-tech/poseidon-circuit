@@ -734,5 +734,21 @@ mod tests {
         };
         let prover = MockProver::run(k, &circuit, vec![]).unwrap();
         assert_eq!(prover.verify(), Ok(()));
+
+        let circuit = PoseidonHashTable::<Fr> {
+            inputs: vec![message2],
+            controls: vec![Fr::from_u128(13)],
+            ..Default::default()
+        };
+        let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+        assert_eq!(prover.verify(), Ok(()));
+
+
+        let circuit = PoseidonHashTable::<Fr> {
+            ..Default::default()
+        };
+        let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+        assert_eq!(prover.verify(), Ok(()));
+
     }
 }
