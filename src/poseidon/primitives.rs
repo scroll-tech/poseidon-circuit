@@ -24,6 +24,8 @@ pub(crate) mod pasta;
 //pub(crate) mod test_vectors;
 
 mod p128pow5t3;
+mod p128pow5t3_compact;
+
 pub use p128pow5t3::P128Pow5T3;
 
 use grain::SboxType;
