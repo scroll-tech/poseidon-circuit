@@ -119,6 +119,16 @@ impl<Fp: Hashable> PoseidonHashConfig<Fp> {
         let hash_index = hash_table[0];
         let header_mark = hash_table[4];
 
+        meta.create_gate("custom row", |meta| {
+            let s_enable = meta.query_selector(s_custom);
+
+            vec![
+                s_enable.clone() * meta.query_advice(hash_inp[0], Rotation::cur()),
+                s_enable.clone() * meta.query_advice(hash_inp[1], Rotation::cur()),
+                s_enable * meta.query_advice(control, Rotation::cur()),
+            ]
+        });
+
         meta.create_gate("control constrain", |meta| {
             /*
                 s_continue must be bool
