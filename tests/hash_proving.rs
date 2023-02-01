@@ -33,7 +33,7 @@ impl Circuit<Fp> for TestCircuit {
     }
 
     fn configure(meta: &mut ConstraintSystem<Fp>) -> Self::Config {
-        let hash_tbl = [0; 4].map(|_| meta.advice_column());
+        let hash_tbl = [0; 5].map(|_| meta.advice_column());
         PoseidonHashConfig::configure_sub(meta, hash_tbl, DEFAULT_STEP)
     }
 

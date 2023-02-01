@@ -67,36 +67,38 @@ use halo2_proofs::{
 #[derive(Clone, Debug)]
 pub struct PoseidonHashConfig<Fp: FieldExt> {
     permute_config: Pow5Config<Fp, 3, 2>,
-    hash_table: [Column<Advice>; 4],
+    hash_table: [Column<Advice>; 5],
     hash_table_aux: [Column<Advice>; 6],
     control_aux: Column<Advice>,
     s_sponge_continue: Column<Advice>,
     constants: [Column<Fixed>; 6],
     control_step_range: TableColumn,
     s_table: Selector,
+    s_custom: Selector,
 }
 
 impl<Fp: Hashable> PoseidonHashConfig<Fp> {
     /// obtain the commitment index of hash table
-    pub fn commitment_index(&self) -> [usize; 4] {
+    pub fn commitment_index(&self) -> [usize; 5] {
         self.hash_table.map(|col| col.index())
     }
 
     /// obtain the hash_table columns
-    pub fn hash_tbl_cols(&self) -> [Column<Advice>; 4] {
+    pub fn hash_tbl_cols(&self) -> [Column<Advice>; 5] {
         self.hash_table
     }
 
     /// build configure for sub circuit
     pub fn configure_sub(
         meta: &mut ConstraintSystem<Fp>,
-        hash_table: [Column<Advice>; 4],
+        hash_table: [Column<Advice>; 5],
         step: usize,
     ) -> Self {
         let state = [0; 3].map(|_| meta.advice_column());
         let partial_sbox = meta.advice_column();
         let constants = [0; 6].map(|_| meta.fixed_column());
-        let s_table = meta.complex_selector();
+        let s_table = meta.selector();
+        let s_custom = meta.selector();
 
         let hash_table_aux = [0; 6].map(|_| meta.advice_column());
         for col in hash_table_aux.iter().chain(hash_table[0..1].iter()) {
@@ -115,39 +117,51 @@ impl<Fp: Hashable> PoseidonHashConfig<Fp> {
         let hash_out = hash_table_aux[5];
         let hash_inp = &hash_table[1..3];
         let hash_index = hash_table[0];
+        let header_mark = hash_table[4];
 
         meta.create_gate("control constrain", |meta| {
+            /*
+                s_continue must be bool
+                s_continue must be false on each row which control is 0 (MPT mode)
+                header_mark is just not(s_continue)
+             */
             let s_enable = meta.query_selector(s_table);
             let ctrl = meta.query_advice(control, Rotation::cur());
             let ctrl_bool = ctrl.clone() * meta.query_advice(control_aux, Rotation::cur());
             let s_continue = meta.query_advice(s_sponge_continue, Rotation::cur());
 
             vec![
+                s_enable.clone() * s_continue.clone() * (Expression::Constant(Fp::one()) - s_continue.clone()),
                 s_enable.clone() * ctrl * (Expression::Constant(Fp::one()) - ctrl_bool.clone()),
-                s_enable * s_continue * (Expression::Constant(Fp::one()) - ctrl_bool),
+                s_enable.clone() * s_continue.clone() * (Expression::Constant(Fp::one()) - ctrl_bool),
+                s_enable * (Expression::Constant(Fp::one()) - s_continue - meta.query_advice(header_mark, Rotation::cur())),
             ]
         });
 
         meta.create_gate("control step", |meta| {
-            let s_enable = meta.query_selector(s_table);
+            /*
+                when s_continue is true, it trigger a RANGE checking on the ctrl_prev
+                to less than or equal to **step**
+                and current ctrl can not be 0
+             */
             let s_continue = meta.query_advice(s_sponge_continue, Rotation::cur());
+            let s_enable = meta.query_selector(s_table) * s_continue;
             let ctrl = meta.query_advice(control, Rotation::cur());
             let ctrl_prev = meta.query_advice(control, Rotation::prev());
+            let ctrl_bool = ctrl.clone() * meta.query_advice(control_aux, Rotation::cur());
 
             vec![
-                s_enable
-                    * s_continue
-                    * (ctrl + Expression::Constant(Fp::from_u128(step as u128)) - ctrl_prev),
+                s_enable.clone() * (ctrl + Expression::Constant(Fp::from_u128(step as u128)) - ctrl_prev),
+                s_enable * (Expression::Constant(Fp::one()) - ctrl_bool),
             ]
         });
 
         meta.lookup("control range check", |meta| {
-            let s_enable = meta.query_selector(s_table);
-            let s_continue = meta.query_advice(s_sponge_continue, Rotation::cur());
+            let s_enable = meta.query_advice(header_mark, Rotation::cur());
             let ctrl = meta.query_advice(control, Rotation::prev());
 
             vec![(
-                s_enable * (Expression::Constant(Fp::one()) - s_continue) * ctrl,
+                s_enable * ctrl,
                 control_step_range,
             )]
         });
@@ -215,6 +229,7 @@ impl<Fp: Hashable> PoseidonHashConfig<Fp> {
             constants,
             control_step_range,
             s_table,
+            s_custom,
             s_sponge_continue,
         }
     }
@@ -229,6 +244,8 @@ pub struct PoseidonHashTable<Fp> {
     pub controls: Vec<Fp>,
     /// the expected hash output for checking
     pub checks: Vec<Option<Fp>>,
+    /// the custom hash for nil message
+    pub nil_msg_hash: Option<Fp>,
 }
 
 impl<Fp: FieldExt> PoseidonHashTable<Fp> {
@@ -496,6 +513,13 @@ impl<'d, Fp: Hashable, const STEP: usize> PoseidonHashChip<'d, Fp, STEP> {
                     )?;
 
                     region.assign_advice(
+                        || format!("state continue control_{}", i),
+                        config.hash_table[4],
+                        offset,
+                        || Value::known(if is_new_sponge { Fp::one() } else { Fp::zero() }),
+                    )?;
+
+                    region.assign_advice(
                         || format!("hash input first_{}", i),
                         config.hash_table[1],
                         offset,
@@ -650,7 +674,7 @@ mod tests {
         }
 
         fn configure(meta: &mut ConstraintSystem<Fp>) -> Self::Config {
-            let hash_tbl = [0; 4].map(|_| meta.advice_column());
+            let hash_tbl = [0; 5].map(|_| meta.advice_column());
             (
                 PoseidonHashConfig::configure_sub(meta, hash_tbl, TEST_STEP),
                 4,
@@ -723,6 +747,7 @@ mod tests {
             inputs: vec![message1, message2],
             controls: vec![Fr::from_u128(45), Fr::from_u128(13)],
             checks: vec![None, Some(Fr::from_str_vartime("15002881182751877599173281392790087382867290792048832034781070831698029191486").unwrap())],
+            ..Default::default()
         };
         let prover = MockProver::run(k, &circuit, vec![]).unwrap();
         assert_eq!(prover.verify(), Ok(()));
@@ -731,6 +756,7 @@ mod tests {
             inputs: vec![message1, message2, message1],
             controls: vec![Fr::from_u128(64), Fr::from_u128(32), Fr::zero()],
             checks: Vec::new(),
+            ..Default::default()
         };
         let prover = MockProver::run(k, &circuit, vec![]).unwrap();
         assert_eq!(prover.verify(), Ok(()));
@@ -743,12 +769,10 @@ mod tests {
         let prover = MockProver::run(k, &circuit, vec![]).unwrap();
         assert_eq!(prover.verify(), Ok(()));
 
-
         let circuit = PoseidonHashTable::<Fr> {
             ..Default::default()
         };
         let prover = MockProver::run(k, &circuit, vec![]).unwrap();
         assert_eq!(prover.verify(), Ok(()));
-
     }
 }
