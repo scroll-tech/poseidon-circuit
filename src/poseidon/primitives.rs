@@ -323,7 +323,7 @@ impl<F: FieldExt, const RATE: usize, const L: usize> Domain<F, RATE> for Constan
     type Padding = iter::Take<iter::Repeat<F>>;
 
     fn name() -> String {
-        format!("ConstantLength<{}>", L)
+        format!("ConstantLength<{L}>")
     }
 
     fn initial_capacity_element() -> F {
@@ -351,7 +351,7 @@ impl<F: FieldExt, const RATE: usize, const L: usize> Domain<F, RATE> for Constan
     type Padding = <ConstantLength<L> as Domain<F, RATE>>::Padding;
 
     fn name() -> String {
-        format!("ConstantLength<{}> in iden3's style", L)
+        format!("ConstantLength<{L}> in iden3's style")
     }
 
     // iden3's scheme do not set any capacity mark

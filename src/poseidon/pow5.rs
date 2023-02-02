@@ -343,7 +343,7 @@ impl<
                 let mut state = Vec::with_capacity(WIDTH);
                 let mut load_state_word = |i: usize, value: F| -> Result<_, Error> {
                     let var = region.assign_advice_from_constant(
-                        || format!("state_{}", i),
+                        || format!("state_{i}"),
                         config.state[i],
                         0,
                         value,
@@ -382,7 +382,7 @@ impl<
                     initial_state[i]
                         .0
                         .copy_advice(
-                            || format!("load state_{}", i),
+                            || format!("load state_{i}"),
                             &mut region,
                             config.state[i],
                             0,
@@ -398,7 +398,7 @@ impl<
                     let constraint_var = match input.0[i].clone() {
                         Some(PaddedWord::Message(word)) => word,
                         Some(PaddedWord::Padding(padding_value)) => region.assign_fixed(
-                            || format!("load pad_{}", i),
+                            || format!("load pad_{i}"),
                             config.rc_b[i],
                             1,
                             || Value::known(padding_value),
@@ -407,7 +407,7 @@ impl<
                     };
                     constraint_var
                         .copy_advice(
-                            || format!("load input_{}", i),
+                            || format!("load input_{i}"),
                             &mut region,
                             config.state[i],
                             1,
@@ -421,7 +421,7 @@ impl<
                 let constrain_output_word = |i: usize| {
                     region
                         .assign_advice(
-                            || format!("load output_{}", i),
+                            || format!("load output_{i}"),
                             config.state[i],
                             2,
                             || {
@@ -568,7 +568,7 @@ impl<F: FieldExt, const WIDTH: usize> Pow5State<F, WIDTH> {
             let r: Vec<_> = Some(r_0).into_iter().chain(r_i).collect();
 
             region.assign_advice(
-                || format!("round_{} partial_sbox", round),
+                || format!("round_{round} partial_sbox"),
                 config.partial_sbox,
                 offset,
                 || r[0],
@@ -629,7 +629,7 @@ impl<F: FieldExt, const WIDTH: usize> Pow5State<F, WIDTH> {
         let load_state_word = |i: usize| {
             initial_state[i]
                 .0
-                .copy_advice(|| format!("load state_{}", i), region, config.state[i], 0)
+                .copy_advice(|| format!("load state_{i}"), region, config.state[i], 0)
                 .map(StateWord)
         };
 
@@ -651,7 +651,7 @@ impl<F: FieldExt, const WIDTH: usize> Pow5State<F, WIDTH> {
         // Load the round constants.
         let mut load_round_constant = |i: usize| {
             region.assign_fixed(
-                || format!("round_{} rc_{}", round, i),
+                || format!("round_{round} rc_{i}"),
                 config.rc_a[i],
                 offset,
                 || Value::known(config.round_constants[round][i]),
@@ -667,7 +667,7 @@ impl<F: FieldExt, const WIDTH: usize> Pow5State<F, WIDTH> {
         let next_state_word = |i: usize| {
             let value = next_state[i];
             let var = region.assign_advice(
-                || format!("round_{} state_{}", next_round, i),
+                || format!("round_{next_round} state_{i}"),
                 config.state[i],
                 offset + 1,
                 || value,
