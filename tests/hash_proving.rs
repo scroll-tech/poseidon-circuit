@@ -42,7 +42,9 @@ impl Circuit<Fp> for TestCircuit {
         config: Self::Config,
         mut layouter: impl Layouter<Fp>,
     ) -> Result<(), Error> {
-        let chip = PoseidonHashChip::<Fp, DEFAULT_STEP>::construct(config, &self.0, self.1);
+        let mut data_with_challenge = self.0.clone();
+        data_with_challenge.nil_msg_hash.replace(Fp::from(42u64));        
+        let chip = PoseidonHashChip::<Fp, DEFAULT_STEP>::construct(config, &data_with_challenge, self.1);
         chip.load(&mut layouter)
     }
 }

@@ -58,7 +58,7 @@ impl MessageHashable for Fr {
 
 use crate::poseidon::{PoseidonInstructions, Pow5Chip, Pow5Config, StateWord, Var};
 use halo2_proofs::{
-    circuit::{Chip, Layouter, Value},
+    circuit::{Chip, Layouter, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector, TableColumn},
     poly::Rotation,
 };
@@ -104,7 +104,6 @@ impl<Fp: Hashable> PoseidonHashConfig<Fp> {
         for col in hash_table_aux.iter().chain(hash_table[0..1].iter()) {
             meta.enable_equality(*col);
         }
-        meta.enable_equality(constants[0]);
 
         let control = hash_table[3];
         let s_sponge_continue = meta.advice_column();
@@ -326,22 +325,200 @@ impl<'d, Fp: Hashable, const STEP: usize> PoseidonHashChip<'d, Fp, STEP> {
         }
     }
 
+    fn fill_hash_tbl_custom(
+        &self, 
+        region: &mut Region<'_, Fp>,
+    ) -> Result<usize, Error> {
+
+        let config = &self.config;
+
+        config.s_custom.enable(region, 0)?;
+        // all zero row
+        for (tip, cols) in [
+            ("dummy inputs", config.hash_table.as_slice()),
+            ("dummy aux inputs", config.hash_table_aux.as_slice()),
+            ("control aux head", [config.control_aux].as_slice()),
+            ("control sponge continue head", [config.s_sponge_continue].as_slice())
+        ] {
+            for col in cols {
+                region.assign_advice(|| tip, *col, 0, || Value::known(Fp::zero()))?;
+            }                
+        }
+
+        config.s_custom.enable(region, 1)?;
+        // custom
+        for (tip, cols) in [
+            ("custom inputs", &config.hash_table[1..4]),
+            ("custom aux inputs", config.hash_table_aux.as_slice()),
+            ("control aux head custom", [config.control_aux].as_slice()),
+            ("control sponge continue head custom", [config.s_sponge_continue].as_slice())
+        ] {
+            for col in cols {
+                region.assign_advice(|| tip, *col, 1, || Value::known(Fp::zero()))?;
+            }                
+        }
+
+        // input, notice hash index constrain require we also assign hash_out col
+        for col in [
+            config.hash_table_aux[5],
+            config.hash_table[0],
+        ]{
+            region.assign_advice(
+                || "custom hash for nil", 
+                col, 
+                1,
+                || self.data.nil_msg_hash.map(Value::known).unwrap_or_else(Value::unknown),
+            )?;    
+        }
+        region.assign_advice(|| "custom mark",  config.hash_table[4], 1, || Value::known(Fp::one()))?;
+
+        Ok(2)
+        
+    }
+
+    fn fill_hash_tbl_body(
+        &self, 
+        region: &mut Region<'_, Fp>,
+        begin_offset: usize,
+    ) -> Result<(Vec<[StateWord<Fp>;3]>, Vec<[StateWord<Fp>;3]>), Error> {
+
+        let config = &self.config;
+        let data = self.data;
+
+        let mut states_in = Vec::new();
+        let mut states_out = Vec::new();
+        let hash_helper = Fp::hasher();
+
+        let dummy_input: [Option<&[Fp; 2]>; 1] = [None];
+        let dummy_item: [Option<&Fp>; 1] = [None];
+        let inputs_i = data
+            .inputs
+            .iter()
+            .map(Some)
+            .chain(dummy_input.into_iter().cycle())
+            .take(self.calcs);
+        let controls_i = data
+            .controls
+            .iter()
+            .map(Some)
+            .chain(dummy_item.into_iter().cycle())
+            .take(self.calcs);
+
+        let checks_i = data
+            .checks
+            .iter()
+            .map(|i| i.as_ref())
+            .chain(dummy_item.into_iter().cycle())
+            .take(self.calcs);
+
+        let mut is_new_sponge = true;
+        let mut process_start = 0;
+        let mut state: [Fp; 3] = [Fp::zero(); 3];
+        let mut last_offset = 0;
+
+        for (i, ((inp, control), check)) in
+            inputs_i.zip(controls_i).zip(checks_i).enumerate()
+        {
+            let control = control.copied().unwrap_or_else(Fp::zero);
+            let offset = i + begin_offset;
+            last_offset = offset;
+
+            if is_new_sponge {
+                state[0] = control;
+                process_start = offset;
+            }
+
+            let inp = inp
+                .map(|[a, b]| [*a, *b])
+                .unwrap_or_else(|| [Fp::zero(), Fp::zero()]);
+
+            state.iter_mut().skip(1).zip(inp).for_each(|(s, inp)| {
+                if is_new_sponge {
+                    *s = inp;
+                } else {
+                    *s += inp;
+                }
+            });
+
+            let state_start = state;
+            hash_helper.permute(&mut state); //here we calculate the hash
+
+            //and sanity check ...
+            if let Some(ck) = check {
+                assert_eq!(*ck, state[0]);
+            }
+
+            let current_hash = state[0];
+
+            //assignment ...
+            config.s_table.enable(region, offset)?;
+
+            let c_start = [0;3].into_iter().enumerate().map(|(i, _)|
+                region.assign_advice(
+                    || format!("state input {i}_{offset}"),
+                    config.hash_table_aux[i],
+                    offset,
+                    || Value::known(state_start[i]),
+                )
+            ).collect::<Result<Vec<_>, _>>()?;
+
+            let c_end = [5,3,4].into_iter().enumerate().map(|(i,j)|
+                region.assign_advice(
+                    || format!("state output {i}_{offset}"),
+                    config.hash_table_aux[j],
+                    offset,
+                    || Value::known(state[i]),
+                )
+            ).collect::<Result<Vec<_>, _>>()?;
+
+            for (tip, col, val) in [
+                ("hash input first", config.hash_table[1], inp[0]),
+                ("hash input second", config.hash_table[2], inp[1]),
+                ("state input control", config.hash_table[3], control),
+                ("state beginning flag", config.hash_table[4], if is_new_sponge {Fp::one()} else {Fp::zero()}),
+                ("state input control_aux", config.control_aux, control.invert().unwrap_or_else(Fp::zero)),
+                ("state continue control", config.s_sponge_continue, if is_new_sponge {Fp::zero()} else {Fp::one()}),
+            ]{
+                region.assign_advice(
+                    || format!("{tip}_{offset}"),
+                    col,
+                    offset,
+                    || Value::known(val),
+                )?;                    
+            }
+
+            is_new_sponge = control <= Fp::from_u128(STEP as u128);
+
+            //fill all the hash_table[0] with result hash
+            if is_new_sponge {
+                (process_start..=offset).try_for_each(|ith| {
+                    region.assign_advice(
+                            || format!("hash index_{ith}"),
+                            config.hash_table[0],
+                            ith,
+                            || Value::known(current_hash),
+                        )
+                        .map(|_| ())
+                })?;
+            }
+
+            //we directly specify the init state of permutation
+            let c_start_arr : [_; 3] = c_start.try_into().expect("same size");
+            states_in.push(c_start_arr.map(StateWord::from));
+            let c_end_arr : [_; 3] = c_end.try_into().expect("same size");
+            states_out.push(c_end_arr.map(StateWord::from));
+        }
+
+        // set the last row is "custom", a row both enabled and customed
+        // can only fill a padding row ([0, 0] in MPT mode)
+        config.s_custom.enable(region, last_offset)?;
+        Ok((states_in, states_out))                
+
+    }
+
     /// load the table into circuit under the specified config
     pub fn load(&self, layouter: &mut impl Layouter<Fp>) -> Result<(), Error> {
         let config = &self.config;
-        let constants_cell = layouter.assign_region(
-            || "constant heading",
-            |mut region| {
-                let c0 = region.assign_fixed(
-                    || "constant zero",
-                    config.constants[0],
-                    0,
-                    || Value::known(Fp::zero()),
-                )?;
-
-                Ok([c0])
-            },
-        )?;
 
         layouter.assign_table(
             || "STEP range check",
@@ -359,228 +536,15 @@ impl<'d, Fp: Hashable, const STEP: usize> PoseidonHashChip<'d, Fp, STEP> {
             },
         )?;
 
-        let data = self.data;
         let (states_in, states_out) = layouter.assign_region(
             || "hash table",
             |mut region| {
-                let mut states_in = Vec::new();
-                let mut states_out = Vec::new();
-                let hash_helper = Fp::hasher();
-
-                let dummy_input: [Option<&[Fp; 2]>; 1] = [None];
-                let dummy_item: [Option<&Fp>; 1] = [None];
-                let inputs_i = data
-                    .inputs
-                    .iter()
-                    .map(Some)
-                    .chain(dummy_input.into_iter().cycle())
-                    .take(self.calcs);
-                let controls_i = data
-                    .controls
-                    .iter()
-                    .map(Some)
-                    .chain(dummy_item.into_iter().cycle())
-                    .take(self.calcs);
-
-                let checks_i = data
-                    .checks
-                    .iter()
-                    .map(|i| i.as_ref())
-                    .chain(dummy_item.into_iter().cycle())
-                    .take(self.calcs);
-
-                // notice our hash table has a (0, 0, 0) at the beginning
-                for col in config.hash_table {
-                    region.assign_advice(|| "dummy inputs", col, 0, || Value::known(Fp::zero()))?;
-                }
-
-                for col in config.hash_table_aux {
-                    region.assign_advice(
-                        || "dummy aux inputs",
-                        col,
-                        0,
-                        || Value::known(Fp::zero()),
-                    )?;
-                }
-
-                region.assign_advice(
-                    || "control aux head",
-                    config.control_aux,
-                    0,
-                    || Value::known(Fp::zero()),
-                )?;
-
-                let c_ctrl = region.assign_advice(
-                    || "control sponge continue head",
-                    config.s_sponge_continue,
-                    0,
-                    || Value::known(Fp::zero()),
-                )?;
-
-                // contraint 0 to zero constant
-                region.constrain_equal(c_ctrl.cell(), constants_cell[0].cell())?;
-
-                let mut is_new_sponge = true;
-                let mut process_start = 0;
-                let mut offset = 1;
-                let mut state: [Fp; 3] = [Fp::zero(); 3];
-
-                for (i, ((inp, control), check)) in
-                    inputs_i.zip(controls_i).zip(checks_i).enumerate()
-                {
-                    let control = control.copied().unwrap_or_else(Fp::zero);
-                    offset = i + 1;
-
-                    if is_new_sponge {
-                        state[0] = control;
-                        process_start = offset;
-                    }
-
-                    let inp = inp
-                        .map(|[a, b]| [*a, *b])
-                        .unwrap_or_else(|| [Fp::zero(), Fp::zero()]);
-
-                    state.iter_mut().skip(1).zip(inp).for_each(|(s, inp)| {
-                        if is_new_sponge {
-                            *s = inp;
-                        } else {
-                            *s += inp;
-                        }
-                    });
-
-                    let state_start = state;
-                    hash_helper.permute(&mut state); //here we calculate the hash
-
-                    //and sanity check ...
-                    if let Some(ck) = check {
-                        assert_eq!(*ck, state[0]);
-                    }
-
-                    config.s_table.enable(&mut region, offset)?;
-
-                    let c_start = [
-                        region.assign_advice(
-                            || format!("state input 0_{}", i),
-                            config.hash_table_aux[0],
-                            offset,
-                            || Value::known(state_start[0]),
-                        )?,
-                        region.assign_advice(
-                            || format!("state input 1_{}", i),
-                            config.hash_table_aux[1],
-                            offset,
-                            || Value::known(state_start[1]),
-                        )?,
-                        region.assign_advice(
-                            || format!("state input 2_{}", i),
-                            config.hash_table_aux[2],
-                            offset,
-                            || Value::known(state_start[2]),
-                        )?,
-                    ];
-
-                    let current_hash = state[0];
-                    let c_end = [
-                        region.assign_advice(
-                            || format!("state output hash_{}", i),
-                            config.hash_table_aux[5],
-                            offset,
-                            || Value::known(state[0]),
-                        )?,
-                        region.assign_advice(
-                            || format!("state output 1_{}", i),
-                            config.hash_table_aux[3],
-                            offset,
-                            || Value::known(state[1]),
-                        )?,
-                        region.assign_advice(
-                            || format!("state output 2_{}", i),
-                            config.hash_table_aux[4],
-                            offset,
-                            || Value::known(state[2]),
-                        )?,
-                    ];
-
-                    region.assign_advice(
-                        || format!("state input control_{}", i),
-                        config.hash_table[3],
-                        offset,
-                        || Value::known(control),
-                    )?;
-
-                    region.assign_advice(
-                        || format!("state input control_aux_{}", i),
-                        config.control_aux,
-                        offset,
-                        || Value::known(control.invert().unwrap_or_else(Fp::zero)),
-                    )?;
-
-                    region.assign_advice(
-                        || format!("state continue control_{}", i),
-                        config.s_sponge_continue,
-                        offset,
-                        || Value::known(if is_new_sponge { Fp::zero() } else { Fp::one() }),
-                    )?;
-
-                    region.assign_advice(
-                        || format!("state continue control_{}", i),
-                        config.hash_table[4],
-                        offset,
-                        || Value::known(if is_new_sponge { Fp::one() } else { Fp::zero() }),
-                    )?;
-
-                    region.assign_advice(
-                        || format!("hash input first_{}", i),
-                        config.hash_table[1],
-                        offset,
-                        || Value::known(inp[0]),
-                    )?;
-
-                    region.assign_advice(
-                        || format!("hash input second_{}", i),
-                        config.hash_table[2],
-                        offset,
-                        || Value::known(inp[1]),
-                    )?;
-
-                    is_new_sponge = control <= Fp::from_u128(STEP as u128);
-
-                    //fill all the hash_table[0] with result hash
-                    if is_new_sponge {
-                        (process_start..offset + 1).try_for_each(|ith| {
-                            region
-                                .assign_advice(
-                                    || format!("hash index_{}", ith),
-                                    config.hash_table[0],
-                                    ith,
-                                    || Value::known(current_hash),
-                                )
-                                .map(|_| ())
-                        })?;
-                    }
-
-                    //we directly specify the init state of permutation
-                    states_in.push(c_start.map(StateWord::from));
-                    states_out.push(c_end.map(StateWord::from));
-                }
-
-                // enforce the last row is "not continue", so user can not put a variable
-                // message till the last row but this should be acceptable (?)
-                let c_last_ctrl = region.assign_advice(
-                    || "control sponge continue last",
-                    config.s_sponge_continue,
-                    offset,
-                    || Value::known(Fp::zero()),
-                )?;
-
-                // contraint 0 to tail line
-                region.constrain_equal(c_last_ctrl.cell(), constants_cell[0].cell())?;
-                Ok((states_in, states_out))
-            },
+                let offset = self.fill_hash_tbl_custom(&mut region)?;
+                self.fill_hash_tbl_body(&mut region, offset)
+            }
         )?;
 
         let mut chip_finals = Vec::new();
-
         for state in states_in {
             let chip = Pow5Chip::construct(config.permute_config.clone());
 
@@ -696,7 +660,9 @@ mod tests {
             (config, max_rows): Self::Config,
             mut layouter: impl Layouter<Fp>,
         ) -> Result<(), Error> {
-            let chip = PoseidonHashChip::<Fp, TEST_STEP>::construct(config, self, max_rows);
+            let mut data_with_challenge = self.clone();
+            data_with_challenge.nil_msg_hash.replace(Fp::from(42u64));
+            let chip = PoseidonHashChip::<Fp, TEST_STEP>::construct(config, &data_with_challenge, max_rows);
             chip.load(&mut layouter)
         }
     }
@@ -712,13 +678,24 @@ mod tests {
             .titled("Hash circuit Layout", ("sans-serif", 60))
             .unwrap();
 
-        let circuit = HashCircuit {
-            calcs: 2,
+        let message1 = [
+            Fr::from_str_vartime("1").unwrap(),
+            Fr::from_str_vartime("2").unwrap(),
+        ];
+
+        let message2 = [
+            Fr::from_str_vartime("2").unwrap(),
+            Fr::from_str_vartime("3").unwrap(),
+        ];
+
+        let k = 8;
+        let circuit = PoseidonHashTable {
+            inputs: vec![message1, message2],
             ..Default::default()
         };
         halo2_proofs::dev::CircuitLayout::default()
             .show_equality_constraints(true)
-            .render(7, &circuit, &root)
+            .render(k, &circuit, &root)
             .unwrap();
     }
 
