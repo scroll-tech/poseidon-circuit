@@ -14,17 +14,17 @@
 
 ## Interface Table
 
-The hash circuit exposes a table containing multiple inputs/output pairs. This table can be looked up by the MPT and codehash circuits. The table has four columns: 2 inputs, 1 digest output, and 1 for control flags.
+The hash circuit exposes a table containing multiple inputs/output pairs. This table can be looked up by the MPT and codehash circuits. The table has four columns: 2 inputs, 1 digest output, 2 for control flags and additional marking.
 
-| 0: Hash index   | 1: Message       | 2: Message      | 3: Control flag |
-| --------------- | ---------------- | --------------- | --------------- |
-| MPT digest      | MPT input 1      | MPT input 2     |      0          |
-|                 |                  |                 |                 |
-| var-len digest  | word 0           | word 1          |     2000        |
-| var-len digest  | word 2           | word 3          |     1968        |
-|      ...        |      ...         |     ...         |     ...         |
-| var-len digest  | word W-2         | word W-1        |      16         |
-|                 |                  |                 |                 |
+| 0: Hash index   | 1: Message       | 2: Message      | 3: Control flag | 4: Head flag |
+| --------------- | ---------------- | --------------- | --------------- | ------------ |
+| MPT digest      | MPT input 1      | MPT input 2     |      0          |      1       |
+|                 |                  |                 |                 |              |
+| var-len digest  | word 0           | word 1          |     2000        |      1       |
+| var-len digest  | word 2           | word 3          |     1968        |      0       |
+|      ...        |      ...         |     ...         |     ...         |      0       |
+| var-len digest  | word W-2         | word W-1        |      16         |      0       |
+|                 |                  |                 |                 |              |
 
 
 The hash circuit supports two modes:
@@ -49,6 +49,17 @@ Compute the digest of a variable-length message. One such entry is composed of c
 
 Specifically, `STEP = 32`.
 
+### Head flag
+
+The head flag is set at each beginning of message, i.e each row under MPT mode and the first row of message in Var-Len mode would be set to 1
+
+### Custom row
+
+2 Additional row is put at the beginning of hash table:
+
+1. A row being filled with 0 for any lookup which is not enabled
+2. A row with `control` and `Message` field being set to 0 and the hash is set to a customed value for representing
+the hash of empty message. Currently it is set to equal to `keccak256(nil)` and the indexed hash value must be properly set under challenge API
 
 ## Internal Table (hash_table_aux)
 
