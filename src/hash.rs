@@ -130,29 +130,36 @@ impl<Fp: Hashable> PoseidonHashConfig<Fp> {
 
         meta.create_gate("control constrain", |meta| {
             /*
-                s_continue must be bool
-                s_continue must be false on each row which control is 0 (MPT mode)
-                header_mark is just not(s_continue)
-             */
+               s_continue must be bool
+               s_continue must be false on each row which control is 0 (MPT mode)
+               header_mark is just not(s_continue)
+            */
             let s_enable = meta.query_selector(s_table);
             let ctrl = meta.query_advice(control, Rotation::cur());
             let ctrl_bool = ctrl.clone() * meta.query_advice(control_aux, Rotation::cur());
             let s_continue = meta.query_advice(s_sponge_continue, Rotation::cur());
 
             vec![
-                s_enable.clone() * s_continue.clone() * (Expression::Constant(Fp::one()) - s_continue.clone()),
+                s_enable.clone()
+                    * s_continue.clone()
+                    * (Expression::Constant(Fp::one()) - s_continue.clone()),
                 s_enable.clone() * ctrl * (Expression::Constant(Fp::one()) - ctrl_bool.clone()),
-                s_enable.clone() * s_continue.clone() * (Expression::Constant(Fp::one()) - ctrl_bool),
-                s_enable * (Expression::Constant(Fp::one()) - s_continue - meta.query_advice(header_mark, Rotation::cur())),
+                s_enable.clone()
+                    * s_continue.clone()
+                    * (Expression::Constant(Fp::one()) - ctrl_bool),
+                s_enable
+                    * (Expression::Constant(Fp::one())
+                        - s_continue
+                        - meta.query_advice(header_mark, Rotation::cur())),
             ]
         });
 
         meta.create_gate("control step", |meta| {
             /*
-                when s_continue is true, it trigger a RANGE checking on the ctrl_prev
-                to less than or equal to **step**
-                and current ctrl can not be 0
-             */
+               when s_continue is true, it trigger a RANGE checking on the ctrl_prev
+               to less than or equal to **step**
+               and current ctrl can not be 0
+            */
             let s_continue = meta.query_advice(s_sponge_continue, Rotation::cur());
             let s_enable = meta.query_selector(s_table) * s_continue;
             let ctrl = meta.query_advice(control, Rotation::cur());
@@ -160,7 +167,8 @@ impl<Fp: Hashable> PoseidonHashConfig<Fp> {
             let ctrl_bool = ctrl.clone() * meta.query_advice(control_aux, Rotation::cur());
 
             vec![
-                s_enable.clone() * (ctrl + Expression::Constant(Fp::from_u128(step as u128)) - ctrl_prev),
+                s_enable.clone()
+                    * (ctrl + Expression::Constant(Fp::from_u128(step as u128)) - ctrl_prev),
                 s_enable * (Expression::Constant(Fp::one()) - ctrl_bool),
             ]
         });
@@ -169,10 +177,7 @@ impl<Fp: Hashable> PoseidonHashConfig<Fp> {
             let s_enable = meta.query_advice(header_mark, Rotation::cur());
             let ctrl = meta.query_advice(control, Rotation::prev());
 
-            vec![(
-                s_enable * ctrl,
-                control_step_range,
-            )]
+            vec![(s_enable * ctrl, control_step_range)]
         });
 
         meta.create_gate("hash index constrain", |meta| {
@@ -301,6 +306,20 @@ impl<Fp: FieldExt> PoseidonHashTable<Fp> {
         self.inputs.append(&mut new_inps);
         self.controls.append(&mut ctrl_series);
     }
+
+    /// return the row which poseidon table use (notice it maybe much smaller
+    /// than the actual circuit row required)
+    pub fn table_size(&self) -> usize {
+        self.inputs.len()
+    }
+}
+
+impl<Fp: Hashable> PoseidonHashTable<Fp> {
+    /// return minimum required the circuit rows\
+    /// (size of hashes * rows required by each hash)
+    pub fn minimum_row_require(&self) -> usize {
+        self.inputs.len() * Fp::hash_block_size()
+    }
 }
 
 /// Represent the chip for Poseidon hash table
@@ -310,6 +329,8 @@ pub struct PoseidonHashChip<'d, Fp: FieldExt, const STEP: usize> {
     data: &'d PoseidonHashTable<Fp>,
     config: PoseidonHashConfig<Fp>,
 }
+
+type PermutedState<Fp> = Vec<[StateWord<Fp>; 3]>;
 
 impl<'d, Fp: Hashable, const STEP: usize> PoseidonHashChip<'d, Fp, STEP> {
     ///construct the chip
@@ -325,11 +346,7 @@ impl<'d, Fp: Hashable, const STEP: usize> PoseidonHashChip<'d, Fp, STEP> {
         }
     }
 
-    fn fill_hash_tbl_custom(
-        &self, 
-        region: &mut Region<'_, Fp>,
-    ) -> Result<usize, Error> {
-
+    fn fill_hash_tbl_custom(&self, region: &mut Region<'_, Fp>) -> Result<usize, Error> {
         let config = &self.config;
 
         config.s_custom.enable(region, 0)?;
@@ -338,11 +355,14 @@ impl<'d, Fp: Hashable, const STEP: usize> PoseidonHashChip<'d, Fp, STEP> {
             ("dummy inputs", config.hash_table.as_slice()),
             ("dummy aux inputs", config.hash_table_aux.as_slice()),
             ("control aux head", [config.control_aux].as_slice()),
-            ("control sponge continue head", [config.s_sponge_continue].as_slice())
+            (
+                "control sponge continue head",
+                [config.s_sponge_continue].as_slice(),
+            ),
         ] {
             for col in cols {
                 region.assign_advice(|| tip, *col, 0, || Value::known(Fp::zero()))?;
-            }                
+            }
         }
 
         config.s_custom.enable(region, 1)?;
@@ -351,37 +371,45 @@ impl<'d, Fp: Hashable, const STEP: usize> PoseidonHashChip<'d, Fp, STEP> {
             ("custom inputs", &config.hash_table[1..4]),
             ("custom aux inputs", config.hash_table_aux.as_slice()),
             ("control aux head custom", [config.control_aux].as_slice()),
-            ("control sponge continue head custom", [config.s_sponge_continue].as_slice())
+            (
+                "control sponge continue head custom",
+                [config.s_sponge_continue].as_slice(),
+            ),
         ] {
             for col in cols {
                 region.assign_advice(|| tip, *col, 1, || Value::known(Fp::zero()))?;
-            }                
+            }
         }
 
         // input, notice hash index constrain require we also assign hash_out col
-        for col in [
-            config.hash_table_aux[5],
-            config.hash_table[0],
-        ]{
+        for col in [config.hash_table_aux[5], config.hash_table[0]] {
             region.assign_advice(
-                || "custom hash for nil", 
-                col, 
+                || "custom hash for nil",
+                col,
                 1,
-                || self.data.nil_msg_hash.map(Value::known).unwrap_or_else(Value::unknown),
-            )?;    
+                || {
+                    self.data
+                        .nil_msg_hash
+                        .map(Value::known)
+                        .unwrap_or_else(Value::unknown)
+                },
+            )?;
         }
-        region.assign_advice(|| "custom mark",  config.hash_table[4], 1, || Value::known(Fp::one()))?;
+        region.assign_advice(
+            || "custom mark",
+            config.hash_table[4],
+            1,
+            || Value::known(Fp::one()),
+        )?;
 
         Ok(2)
-        
     }
 
     fn fill_hash_tbl_body(
-        &self, 
+        &self,
         region: &mut Region<'_, Fp>,
         begin_offset: usize,
-    ) -> Result<(Vec<[StateWord<Fp>;3]>, Vec<[StateWord<Fp>;3]>), Error> {
-
+    ) -> Result<(PermutedState<Fp>, PermutedState<Fp>), Error> {
         let config = &self.config;
         let data = self.data;
 
@@ -416,9 +444,7 @@ impl<'d, Fp: Hashable, const STEP: usize> PoseidonHashChip<'d, Fp, STEP> {
         let mut state: [Fp; 3] = [Fp::zero(); 3];
         let mut last_offset = 0;
 
-        for (i, ((inp, control), check)) in
-            inputs_i.zip(controls_i).zip(checks_i).enumerate()
-        {
+        for (i, ((inp, control), check)) in inputs_i.zip(controls_i).zip(checks_i).enumerate() {
             let control = control.copied().unwrap_or_else(Fp::zero);
             let offset = i + begin_offset;
             last_offset = offset;
@@ -453,38 +479,58 @@ impl<'d, Fp: Hashable, const STEP: usize> PoseidonHashChip<'d, Fp, STEP> {
             //assignment ...
             config.s_table.enable(region, offset)?;
 
-            let c_start = [0;3].into_iter().enumerate().map(|(i, _)|
-                region.assign_advice(
-                    || format!("state input {i}_{offset}"),
-                    config.hash_table_aux[i],
-                    offset,
-                    || Value::known(state_start[i]),
-                )
-            ).collect::<Result<Vec<_>, _>>()?;
+            let c_start = [0; 3]
+                .into_iter()
+                .enumerate()
+                .map(|(i, _)| {
+                    region.assign_advice(
+                        || format!("state input {i}_{offset}"),
+                        config.hash_table_aux[i],
+                        offset,
+                        || Value::known(state_start[i]),
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?;
 
-            let c_end = [5,3,4].into_iter().enumerate().map(|(i,j)|
-                region.assign_advice(
-                    || format!("state output {i}_{offset}"),
-                    config.hash_table_aux[j],
-                    offset,
-                    || Value::known(state[i]),
-                )
-            ).collect::<Result<Vec<_>, _>>()?;
+            let c_end = [5, 3, 4]
+                .into_iter()
+                .enumerate()
+                .map(|(i, j)| {
+                    region.assign_advice(
+                        || format!("state output {i}_{offset}"),
+                        config.hash_table_aux[j],
+                        offset,
+                        || Value::known(state[i]),
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?;
 
             for (tip, col, val) in [
                 ("hash input first", config.hash_table[1], inp[0]),
                 ("hash input second", config.hash_table[2], inp[1]),
                 ("state input control", config.hash_table[3], control),
-                ("state beginning flag", config.hash_table[4], if is_new_sponge {Fp::one()} else {Fp::zero()}),
-                ("state input control_aux", config.control_aux, control.invert().unwrap_or_else(Fp::zero)),
-                ("state continue control", config.s_sponge_continue, if is_new_sponge {Fp::zero()} else {Fp::one()}),
-            ]{
+                (
+                    "state beginning flag",
+                    config.hash_table[4],
+                    if is_new_sponge { Fp::one() } else { Fp::zero() },
+                ),
+                (
+                    "state input control_aux",
+                    config.control_aux,
+                    control.invert().unwrap_or_else(Fp::zero),
+                ),
+                (
+                    "state continue control",
+                    config.s_sponge_continue,
+                    if is_new_sponge { Fp::zero() } else { Fp::one() },
+                ),
+            ] {
                 region.assign_advice(
                     || format!("{tip}_{offset}"),
                     col,
                     offset,
                     || Value::known(val),
-                )?;                    
+                )?;
             }
 
             is_new_sponge = control <= Fp::from_u128(STEP as u128);
@@ -492,7 +538,8 @@ impl<'d, Fp: Hashable, const STEP: usize> PoseidonHashChip<'d, Fp, STEP> {
             //fill all the hash_table[0] with result hash
             if is_new_sponge {
                 (process_start..=offset).try_for_each(|ith| {
-                    region.assign_advice(
+                    region
+                        .assign_advice(
                             || format!("hash index_{ith}"),
                             config.hash_table[0],
                             ith,
@@ -503,17 +550,16 @@ impl<'d, Fp: Hashable, const STEP: usize> PoseidonHashChip<'d, Fp, STEP> {
             }
 
             //we directly specify the init state of permutation
-            let c_start_arr : [_; 3] = c_start.try_into().expect("same size");
+            let c_start_arr: [_; 3] = c_start.try_into().expect("same size");
             states_in.push(c_start_arr.map(StateWord::from));
-            let c_end_arr : [_; 3] = c_end.try_into().expect("same size");
+            let c_end_arr: [_; 3] = c_end.try_into().expect("same size");
             states_out.push(c_end_arr.map(StateWord::from));
         }
 
         // set the last row is "custom", a row both enabled and customed
         // can only fill a padding row ([0, 0] in MPT mode)
         config.s_custom.enable(region, last_offset)?;
-        Ok((states_in, states_out))                
-
+        Ok((states_in, states_out))
     }
 
     /// load the table into circuit under the specified config
@@ -541,7 +587,7 @@ impl<'d, Fp: Hashable, const STEP: usize> PoseidonHashChip<'d, Fp, STEP> {
             |mut region| {
                 let offset = self.fill_hash_tbl_custom(&mut region)?;
                 self.fill_hash_tbl_body(&mut region, offset)
-            }
+            },
         )?;
 
         let mut chip_finals = Vec::new();
@@ -662,7 +708,11 @@ mod tests {
         ) -> Result<(), Error> {
             let mut data_with_challenge = self.clone();
             data_with_challenge.nil_msg_hash.replace(Fp::from(42u64));
-            let chip = PoseidonHashChip::<Fp, TEST_STEP>::construct(config, &data_with_challenge, max_rows);
+            let chip = PoseidonHashChip::<Fp, TEST_STEP>::construct(
+                config,
+                &data_with_challenge,
+                max_rows,
+            );
             chip.load(&mut layouter)
         }
     }

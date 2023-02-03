@@ -43,8 +43,9 @@ impl Circuit<Fp> for TestCircuit {
         mut layouter: impl Layouter<Fp>,
     ) -> Result<(), Error> {
         let mut data_with_challenge = self.0.clone();
-        data_with_challenge.nil_msg_hash.replace(Fp::from(42u64));        
-        let chip = PoseidonHashChip::<Fp, DEFAULT_STEP>::construct(config, &data_with_challenge, self.1);
+        data_with_challenge.nil_msg_hash.replace(Fp::from(42u64));
+        let chip =
+            PoseidonHashChip::<Fp, DEFAULT_STEP>::construct(config, &data_with_challenge, self.1);
         chip.load(&mut layouter)
     }
 }
@@ -125,16 +126,9 @@ fn proof_and_verify() {
                     Fp::from_str_vartime("30").unwrap(),
                     Fp::from_str_vartime("1").unwrap(),
                 ],
-                [
-                    Fp::from_str_vartime("65536").unwrap(),
-                    Fp::zero(),
-                ],                
+                [Fp::from_str_vartime("65536").unwrap(), Fp::zero()],
             ],
-            controls: vec![
-                Fp::zero(),
-                Fp::from(46u64),
-                Fp::from(14u64),
-            ],
+            controls: vec![Fp::zero(), Fp::from(46u64), Fp::from(14u64)],
             ..Default::default()
         },
         4,
