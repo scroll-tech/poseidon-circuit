@@ -260,6 +260,8 @@ pub struct PoseidonHashTable<Fp> {
     pub checks: Vec<Option<Fp>>,
     /// the custom hash for nil message
     pub nil_msg_hash: Option<Fp>,
+    /// mpt_only table: (no custom row)
+    pub mpt_only: bool,
 }
 
 impl<Fp: FieldExt> PoseidonHashTable<Fp> {
@@ -366,6 +368,10 @@ impl<'d, Fp: Hashable, const STEP: usize> PoseidonHashChip<'d, Fp, STEP> {
         }
 
         config.s_custom.enable(region, 1)?;
+        if self.data.mpt_only {
+            return Ok(1);
+        }
+
         // custom
         for (tip, cols) in [
             ("custom inputs", &config.hash_table[1..4]),
