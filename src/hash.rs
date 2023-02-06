@@ -258,10 +258,6 @@ pub struct PoseidonHashTable<Fp> {
     pub controls: Vec<Fp>,
     /// the expected hash output for checking
     pub checks: Vec<Option<Fp>>,
-    /// the custom hash for nil message
-    pub nil_msg_hash: Option<Fp>,
-    /// mpt_only table: (no custom row)
-    pub mpt_only: bool,
 }
 
 impl<Fp: FieldExt> PoseidonHashTable<Fp> {
@@ -328,6 +324,8 @@ impl<Fp: Hashable> PoseidonHashTable<Fp> {
 #[derive(Debug)]
 pub struct PoseidonHashChip<'d, Fp: FieldExt, const STEP: usize> {
     calcs: usize,
+    nil_msg_hash: Option<Fp>,
+    mpt_only: bool,
     data: &'d PoseidonHashTable<Fp>,
     config: PoseidonHashConfig<Fp>,
 }
@@ -340,9 +338,13 @@ impl<'d, Fp: Hashable, const STEP: usize> PoseidonHashChip<'d, Fp, STEP> {
         config: PoseidonHashConfig<Fp>,
         data: &'d PoseidonHashTable<Fp>,
         calcs: usize,
+        mpt_only: bool,
+        nil_msg_hash: Option<Fp>,
     ) -> Self {
         Self {
             calcs,
+            mpt_only,
+            nil_msg_hash,
             data,
             config,
         }
@@ -368,7 +370,7 @@ impl<'d, Fp: Hashable, const STEP: usize> PoseidonHashChip<'d, Fp, STEP> {
         }
 
         config.s_custom.enable(region, 1)?;
-        if self.data.mpt_only {
+        if self.mpt_only {
             return Ok(1);
         }
 
@@ -394,8 +396,7 @@ impl<'d, Fp: Hashable, const STEP: usize> PoseidonHashChip<'d, Fp, STEP> {
                 col,
                 1,
                 || {
-                    self.data
-                        .nil_msg_hash
+                    self.nil_msg_hash
                         .map(Value::known)
                         .unwrap_or_else(Value::unknown)
                 },
@@ -712,12 +713,12 @@ mod tests {
             (config, max_rows): Self::Config,
             mut layouter: impl Layouter<Fp>,
         ) -> Result<(), Error> {
-            let mut data_with_challenge = self.clone();
-            data_with_challenge.nil_msg_hash.replace(Fp::from(42u64));
             let chip = PoseidonHashChip::<Fp, TEST_STEP>::construct(
                 config,
-                &data_with_challenge,
+                &self,
                 max_rows,
+                false,
+                Some(Fp::from(42u64)),
             );
             chip.load(&mut layouter)
         }
