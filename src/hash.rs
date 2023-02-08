@@ -280,6 +280,7 @@ impl<Fp: FieldExt> PoseidonHashTable<Fp> {
         for (a, b, c) in src {
             self.inputs.push([*a, *b]);
             self.checks.push(Some(*c));
+            self.controls.push(Fp::zero());
         }
     }
 
@@ -305,6 +306,7 @@ impl<Fp: FieldExt> PoseidonHashTable<Fp> {
         assert_eq!(new_inps.len(), ctrl_series.len());
         self.inputs.append(&mut new_inps);
         self.controls.append(&mut ctrl_series);
+        assert_eq!(self.inputs.len(), self.controls.len());
     }
 
     /// return the row which poseidon table use (notice it maybe much smaller
@@ -326,6 +328,8 @@ impl<Fp: Hashable> PoseidonHashTable<Fp> {
 #[derive(Debug)]
 pub struct PoseidonHashChip<'d, Fp: FieldExt, const STEP: usize> {
     calcs: usize,
+    nil_msg_hash: Option<Fp>,
+    mpt_only: bool,
     data: &'d PoseidonHashTable<Fp>,
     config: PoseidonHashConfig<Fp>,
 }
@@ -338,9 +342,13 @@ impl<'d, Fp: Hashable, const STEP: usize> PoseidonHashChip<'d, Fp, STEP> {
         config: PoseidonHashConfig<Fp>,
         data: &'d PoseidonHashTable<Fp>,
         calcs: usize,
+        mpt_only: bool,
+        nil_msg_hash: Option<Fp>,
     ) -> Self {
         Self {
             calcs,
+            mpt_only,
+            nil_msg_hash,
             data,
             config,
         }
@@ -366,6 +374,10 @@ impl<'d, Fp: Hashable, const STEP: usize> PoseidonHashChip<'d, Fp, STEP> {
         }
 
         config.s_custom.enable(region, 1)?;
+        if self.mpt_only {
+            return Ok(1);
+        }
+
         // custom
         for (tip, cols) in [
             ("custom inputs", &config.hash_table[1..4]),
@@ -388,8 +400,7 @@ impl<'d, Fp: Hashable, const STEP: usize> PoseidonHashChip<'d, Fp, STEP> {
                 col,
                 1,
                 || {
-                    self.data
-                        .nil_msg_hash
+                    self.nil_msg_hash
                         .map(Value::known)
                         .unwrap_or_else(Value::unknown)
                 },
@@ -417,26 +428,24 @@ impl<'d, Fp: Hashable, const STEP: usize> PoseidonHashChip<'d, Fp, STEP> {
         let mut states_out = Vec::new();
         let hash_helper = Fp::hasher();
 
-        let dummy_input: [Option<&[Fp; 2]>; 1] = [None];
-        let dummy_item: [Option<&Fp>; 1] = [None];
         let inputs_i = data
             .inputs
             .iter()
             .map(Some)
-            .chain(dummy_input.into_iter().cycle())
+            .chain(std::iter::repeat(None))
             .take(self.calcs);
         let controls_i = data
             .controls
             .iter()
             .map(Some)
-            .chain(dummy_item.into_iter().cycle())
+            .chain(std::iter::repeat(None))
             .take(self.calcs);
 
         let checks_i = data
             .checks
             .iter()
             .map(|i| i.as_ref())
-            .chain(dummy_item.into_iter().cycle())
+            .chain(std::iter::repeat(None))
             .take(self.calcs);
 
         let mut is_new_sponge = true;
@@ -471,7 +480,10 @@ impl<'d, Fp: Hashable, const STEP: usize> PoseidonHashChip<'d, Fp, STEP> {
 
             //and sanity check ...
             if let Some(ck) = check {
-                assert_eq!(*ck, state[0]);
+                assert_eq!(
+                    *ck, state[0],
+                    "hash output not match with expected at {offset}"
+                );
             }
 
             let current_hash = state[0];
@@ -706,12 +718,12 @@ mod tests {
             (config, max_rows): Self::Config,
             mut layouter: impl Layouter<Fp>,
         ) -> Result<(), Error> {
-            let mut data_with_challenge = self.clone();
-            data_with_challenge.nil_msg_hash.replace(Fp::from(42u64));
             let chip = PoseidonHashChip::<Fp, TEST_STEP>::construct(
                 config,
-                &data_with_challenge,
+                &self,
                 max_rows,
+                false,
+                Some(Fp::from(42u64)),
             );
             chip.load(&mut layouter)
         }
