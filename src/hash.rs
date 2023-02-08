@@ -278,6 +278,7 @@ impl<Fp: FieldExt> PoseidonHashTable<Fp> {
         for (a, b, c) in src {
             self.inputs.push([*a, *b]);
             self.checks.push(Some(*c));
+            self.controls.push(Fp::zero());
         }
     }
 
@@ -303,6 +304,7 @@ impl<Fp: FieldExt> PoseidonHashTable<Fp> {
         assert_eq!(new_inps.len(), ctrl_series.len());
         self.inputs.append(&mut new_inps);
         self.controls.append(&mut ctrl_series);
+        assert_eq!(self.inputs.len(), self.controls.len());
     }
 
     /// return the row which poseidon table use (notice it maybe much smaller
@@ -424,26 +426,24 @@ impl<'d, Fp: Hashable, const STEP: usize> PoseidonHashChip<'d, Fp, STEP> {
         let mut states_out = Vec::new();
         let hash_helper = Fp::hasher();
 
-        let dummy_input: [Option<&[Fp; 2]>; 1] = [None];
-        let dummy_item: [Option<&Fp>; 1] = [None];
         let inputs_i = data
             .inputs
             .iter()
             .map(Some)
-            .chain(dummy_input.into_iter().cycle())
+            .chain(std::iter::repeat(None))
             .take(self.calcs);
         let controls_i = data
             .controls
             .iter()
             .map(Some)
-            .chain(dummy_item.into_iter().cycle())
+            .chain(std::iter::repeat(None))
             .take(self.calcs);
 
         let checks_i = data
             .checks
             .iter()
             .map(|i| i.as_ref())
-            .chain(dummy_item.into_iter().cycle())
+            .chain(std::iter::repeat(None))
             .take(self.calcs);
 
         let mut is_new_sponge = true;
@@ -478,7 +478,10 @@ impl<'d, Fp: Hashable, const STEP: usize> PoseidonHashChip<'d, Fp, STEP> {
 
             //and sanity check ...
             if let Some(ck) = check {
-                assert_eq!(*ck, state[0]);
+                assert_eq!(
+                    *ck, state[0],
+                    "hash output not match with expected at {offset}"
+                );
             }
 
             let current_hash = state[0];
