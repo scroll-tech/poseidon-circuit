@@ -100,7 +100,13 @@ impl<Fp: Hashable> PoseidonHashConfig<Fp> {
         let s_table = meta.selector();
         let s_custom = meta.selector();
 
-        let hash_table_aux = [0; 6].map(|_| meta.advice_column());
+        let hash_table_aux = [0, 1, 2, 3, 4, 5].map(|idx| {
+            if idx < 5 {
+                meta.advice_column()
+            } else {
+                meta.advice_column_in(halo2_proofs::plonk::SecondPhase)
+            }
+        });
         for col in hash_table_aux.iter().chain(hash_table[0..1].iter()) {
             meta.enable_equality(*col);
         }
@@ -704,7 +710,13 @@ mod tests {
         }
 
         fn configure(meta: &mut ConstraintSystem<Fp>) -> Self::Config {
-            let hash_tbl = [0; 5].map(|_| meta.advice_column());
+            let hash_tbl = [0, 1, 2, 3, 4].map(|idx| {
+                if idx == 0 {
+                    meta.advice_column_in(halo2_proofs::plonk::SecondPhase)
+                } else {
+                    meta.advice_column()
+                }
+            });
             (
                 PoseidonHashConfig::configure_sub(meta, hash_tbl, TEST_STEP),
                 4,
