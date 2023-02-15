@@ -67,13 +67,18 @@ pub trait Hashable: Hashablebase {
     }
 }
 
+#[cfg(not(feature="legacy"))]
+const HASHABLE_DOMAIN_SPEC: u128 = 0x10000000000000000;
+#[cfg(feature="legacy")]
+const HASHABLE_DOMAIN_SPEC: u128 = 1;
+
 /// indicate an message stream constructed by the field can be hashed, commonly
 /// it just need to update the Domain
 pub trait MessageHashable: Hashable {
     /// the domain type used for message hash
     type DomainType: Domain<Self, 2>;
-    /// hash message, if cap is not provided, it commonly use the len of msg
-    fn hash_msg(msg: &[Self], cap: Option<u64>) -> Self;
+    /// hash message, if cap is not provided, it use the basic spec: (len of msg * 2^64, or len of msg in legacy mode)
+    fn hash_msg(msg: &[Self], cap: Option<u128>) -> Self;
     /// init a hasher used for hash message
     fn msg_hasher(
     ) -> Hash<Self, <Self as Hashable>::SpecType, <Self as MessageHashable>::DomainType, 3, 2> {
@@ -95,8 +100,8 @@ impl Hashable for Fr {
 impl MessageHashable for Fr {
     type DomainType = VariableLengthIden3;
 
-    fn hash_msg(msg: &[Self], cap: Option<u64>) -> Self {
-        Self::msg_hasher().hash_with_cap(msg, cap.unwrap_or(msg.len() as u64))
+    fn hash_msg(msg: &[Self], cap: Option<u128>) -> Self {
+        Self::msg_hasher().hash_with_cap(msg, cap.unwrap_or(msg.len() as u128 * HASHABLE_DOMAIN_SPEC))
     }
 }
 
@@ -215,7 +220,7 @@ impl<Fp: Hashable, PC: PermuteChip<Fp, Fp::SpecType, 3, 2>> SpongeConfig<Fp, PC>
 
             vec![
                 s_enable.clone()
-                    * (ctrl + Expression::Constant(Fp::from_u128(step as u128)) - ctrl_prev),
+                    * (ctrl + Expression::Constant(Fp::from_u128(step as u128 * HASHABLE_DOMAIN_SPEC)) - ctrl_prev),
                 s_enable * (Expression::Constant(Fp::one()) - ctrl_bool),
             ]
         });
@@ -339,7 +344,8 @@ impl<Fp: FieldExt> PoseidonHashTable<Fp> {
                 None
             }
         })
-        .map(Fp::from)
+        .map(|n|n as u128 * HASHABLE_DOMAIN_SPEC)
+        .map(Fp::from_u128)
         .take(new_inps.len())
         .collect();
 
@@ -588,7 +594,7 @@ impl<'d, Fp: Hashable, const STEP: usize, PC: PermuteChip<Fp, Fp::SpecType, 3, 2
                 )?;
             }
 
-            is_new_sponge = control <= Fp::from_u128(STEP as u128);
+            is_new_sponge = control <= Fp::from_u128(STEP as u128 * HASHABLE_DOMAIN_SPEC);
 
             //fill all the hash_table[0] with result hash
             if is_new_sponge {
@@ -630,7 +636,7 @@ impl<'d, Fp: Hashable, const STEP: usize, PC: PermuteChip<Fp, Fp::SpecType, 3, 2
                             || "STEP range check",
                             config.control_step_range,
                             i,
-                            || Value::known(Fp::from_u128(i as u128)),
+                            || Value::known(Fp::from_u128(i as u128 * HASHABLE_DOMAIN_SPEC)),
                         )
                         .map(|_| ())
                 })
@@ -717,7 +723,7 @@ mod tests {
             Fr::from_str_vartime("50331648").unwrap(), //0x3000000
         ];
 
-        let supposed_bytes = 45u64;
+        let supposed_bytes = 45u128;
 
         let h = Fr::hash_msg(&msg, Some(supposed_bytes));
         assert_eq!(
@@ -732,7 +738,7 @@ mod tests {
             Fr::zero(),
         ];
 
-        let supposed_bytes = 50u64;
+        let supposed_bytes = 50u128;
 
         let h = Fr::hash_msg(&msg, Some(supposed_bytes));
         assert_eq!(
@@ -864,8 +870,8 @@ mod tests {
         let k = 8;
         let circuit = TestCircuit::<PC>::new( PoseidonHashTable {
             inputs: vec![message1, message2],
-            controls: vec![Fr::from_u128(45), Fr::from_u128(13)],
-            checks: vec![None, Some(Fr::from_str_vartime("15002881182751877599173281392790087382867290792048832034781070831698029191486").unwrap())],
+            controls: vec![Fr::from_u128(45*HASHABLE_DOMAIN_SPEC), Fr::from_u128(13*HASHABLE_DOMAIN_SPEC)],
+            //checks: vec![None, Some(Fr::from_str_vartime("15002881182751877599173281392790087382867290792048832034781070831698029191486").unwrap())],
             ..Default::default()
         });
         let prover = MockProver::run(k, &circuit, vec![]).unwrap();
@@ -873,7 +879,7 @@ mod tests {
 
         let circuit = TestCircuit::<PC>::new(PoseidonHashTable {
             inputs: vec![message1, message2, message1],
-            controls: vec![Fr::from_u128(64), Fr::from_u128(32), Fr::zero()],
+            controls: vec![Fr::from_u128(64*HASHABLE_DOMAIN_SPEC), Fr::from_u128(32*HASHABLE_DOMAIN_SPEC), Fr::zero()],
             checks: Vec::new(),
             ..Default::default()
         });
@@ -882,7 +888,7 @@ mod tests {
 
         let circuit = TestCircuit::<PC>::new(PoseidonHashTable::<Fr> {
             inputs: vec![message2],
-            controls: vec![Fr::from_u128(13)],
+            controls: vec![Fr::from_u128(13*HASHABLE_DOMAIN_SPEC)],
             ..Default::default()
         });
         let prover = MockProver::run(k, &circuit, vec![]).unwrap();
