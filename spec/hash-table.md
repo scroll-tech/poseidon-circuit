@@ -20,10 +20,10 @@ The hash circuit exposes a table containing multiple inputs/output pairs. This t
 | --------------- | ---------------- | --------------- | --------------- | ------------ |
 | MPT digest      | MPT input 1      | MPT input 2     |      0          |      1       |
 |                 |                  |                 |                 |              |
-| var-len digest  | word 0           | word 1          |     2000        |      1       |
-| var-len digest  | word 2           | word 3          |     1968        |      0       |
+| var-len digest  | word 0           | word 1          |  2000*(2^64)    |      1       |
+| var-len digest  | word 2           | word 3          |  1968*(2^64)    |      0       |
 |      ...        |      ...         |     ...         |     ...         |      0       |
-| var-len digest  | word W-2         | word W-1        |      16         |      0       |
+| var-len digest  | word W-2         | word W-1        |  16*(2^64)      |      0       |
 |                 |                  |                 |                 |              |
 
 
@@ -43,11 +43,16 @@ Compute the digest of a variable-length message. One such entry is composed of c
 
 **Initial capacity:** `L * 2^64`, with `L` the message length in bytes (before padding).
 
-**Message encoding:** The message is chunked into `W` words of `STEP/2` bytes. Each word is packed into a field element, least-significant-byte first. The words are given two-by-two on consecutive rows in the table, absorbing `STEP` bytes per row. The control flag on a given row indicates the number of message bytes remaining in the current and following rows. On the last row, `control <= STEP`.
+**Message encoding:** The message is chunked into `W` words of `STEP/2` bytes. Each word is packed into a field element, least-significant-byte first. The words are given two-by-two on consecutive rows in the table, absorbing `STEP` bytes per row. The control flag on a given row indicates the number of message bytes `R` remaining in the current and following rows (and the value is `R * 2^64`). On the last row, `control <= STEP * 2^64`.
 
 **Padding:** the message is padded to a multiple of `STEP` bytes with zeros.
 
 Specifically, `STEP = 32`.
+
+### Legacy scheme
+
+The initial capcity before `scroll-dev-0215` is not multiplied with the domain mark (`2^64`) so they would get different hash results in *var-len* mode. If we wish
+to apply the code work under the legacy schema, use `legacy` feature
 
 ### Head flag
 
