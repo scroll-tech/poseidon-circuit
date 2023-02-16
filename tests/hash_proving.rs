@@ -136,7 +136,7 @@ fn proof_and_verify() {
                 ],
                 [Fp::from_str_vartime("65536").unwrap(), Fp::zero()],
             ],
-            controls: vec![Fp::zero(), Fp::from(46u64), Fp::from(14u64)],
+            controls: vec![0, 46, 14],
             ..Default::default()
         },
         4,
