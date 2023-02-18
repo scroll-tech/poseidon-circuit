@@ -5,7 +5,9 @@ locations, to use with a sponge circuit. It is designed as a set of chips, that 
 even 1 rows per permutation. It can potentially be configured with a max gate degree of 5 for faster proving.
 
 
-**[Design Diagram](https://miro.com/app/board/uXjVPLsk0oU=/?moveToWidget=3458764546593848776&cot=14)**
+**[Design Diagrams](https://miro.com/app/board/uXjVPLsk0oU=/?moveToWidget=3458764546593848776&cot=14)**
+
+![diagram](./Septidon.png)
 
 
 # Spec
