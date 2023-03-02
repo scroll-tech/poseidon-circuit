@@ -712,13 +712,8 @@ mod tests {
         }
 
         fn configure(meta: &mut ConstraintSystem<Fp>) -> Self::Config {
-            let hash_tbl = [0, 1, 2, 3, 4].map(|idx| {
-                if idx == 0 {
-                    meta.advice_column_in(halo2_proofs::plonk::SecondPhase)
-                } else {
-                    meta.advice_column()
-                }
-            });
+            let hash_tbl = [0; 5].map(|_| meta.advice_column());
+
             (
                 PoseidonHashConfig::configure_sub(meta, hash_tbl, TEST_STEP),
                 4,
