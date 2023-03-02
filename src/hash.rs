@@ -134,6 +134,7 @@ impl<Fp: Hashable> PoseidonHashConfig<Fp> {
             ]
         });
 
+        /*
         meta.create_gate("control constrain", |meta| {
             /*
                s_continue must be bool
@@ -178,6 +179,7 @@ impl<Fp: Hashable> PoseidonHashConfig<Fp> {
                 s_enable * (Expression::Constant(Fp::one()) - ctrl_bool),
             ]
         });
+        */
 
         meta.lookup("control range check", |meta| {
             let s_enable = meta.query_advice(header_mark, Rotation::cur());
