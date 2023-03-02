@@ -27,6 +27,7 @@ mod p128pow5t3;
 mod p128pow5t3_compact;
 
 pub use p128pow5t3::P128Pow5T3;
+pub use p128pow5t3_compact::P128Pow5T3CompactSpec as P128Pow5T3Compact;
 
 use grain::SboxType;
 
@@ -492,7 +493,7 @@ mod tests {
     use super::pasta::Fp;
     use halo2_proofs::arithmetic::FieldExt;
 
-    use super::{permute, ConstantLength, Hash, P128Pow5T3, Spec};
+    use super::{permute, ConstantLength, Hash, P128Pow5T3, P128Pow5T3Compact, Spec};
     type OrchardNullifier = P128Pow5T3<Fp>;
 
     #[test]
@@ -523,5 +524,16 @@ mod tests {
 
         let result = hasher.hash(message);
         assert_eq!(state[0], result);
+    }
+
+    #[test]
+    fn spec_equivalence() {
+        let message = [Fp::from(6), Fp::from(42)];
+        let hasher1 = Hash::<_, P128Pow5T3<Fp>, ConstantLength<2>, 3, 2>::init();
+        let hasher2 = Hash::<_, P128Pow5T3Compact<Fp>, ConstantLength<2>, 3, 2>::init();
+
+        let result1 = hasher1.hash(message.clone());
+        let result2 = hasher2.hash(message.clone());
+        assert_eq!(result1, result2);
     }
 }
