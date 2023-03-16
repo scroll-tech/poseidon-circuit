@@ -333,9 +333,7 @@ pub struct PoseidonHashChip<'d, Fp: FieldExt, const STEP: usize, PC: PermuteChip
     config: PoseidonHashConfig<Fp, PC>,
 }
 
-type PermutedState<Fp> = Vec<[StateWord<Fp>; 3]>;
-
-type PermutedState<Fp> = Vec<[StateWord<Fp>; 3]>;
+type PermutedState<Word> = Vec<[Word; 3]>;
 
 impl<
         'd,
@@ -427,7 +425,7 @@ impl<
         &self,
         region: &mut Region<'_, Fp>,
         begin_offset: usize,
-    ) -> Result<(PermutedState<Fp>, PermutedState<Fp>), Error> {
+    ) -> Result<(PermutedState<PC::Word>, PermutedState<PC::Word>), Error> {
         let config = &self.config;
         let data = self.data;
 
