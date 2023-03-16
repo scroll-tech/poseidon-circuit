@@ -5,7 +5,8 @@ use std::fmt;
 use std::iter;
 use std::marker::PhantomData;
 
-use halo2_proofs::arithmetic::FieldExt;
+use halo2_proofs::ff::FromUniformBytes;
+use halo2_proofs::ff::PrimeField;
 
 //pub(crate) mod fp;
 //pub(crate) mod fq;
@@ -38,7 +39,9 @@ pub(crate) type SpongeRate<F, const RATE: usize> = [Option<F>; RATE];
 pub(crate) type Mds<F, const T: usize> = [[F; T]; T];
 
 /// A specification for a Poseidon permutation.
-pub trait Spec<F: FieldExt, const T: usize, const RATE: usize>: fmt::Debug {
+pub trait Spec<F: FromUniformBytes<64> + Ord, const T: usize, const RATE: usize>:
+    fmt::Debug
+{
     /// The number of full rounds for this specification.
     ///
     /// This must be an even number.
@@ -66,7 +69,7 @@ pub trait Spec<F: FieldExt, const T: usize, const RATE: usize>: fmt::Debug {
 
         let round_constants = (0..(r_f + r_p))
             .map(|_| {
-                let mut rc_row = [F::zero(); T];
+                let mut rc_row = [F::ZERO; T];
                 for (rc, value) in rc_row
                     .iter_mut()
                     .zip((0..T).map(|_| grain.next_field_element()))
@@ -84,7 +87,12 @@ pub trait Spec<F: FieldExt, const T: usize, const RATE: usize>: fmt::Debug {
 }
 
 /// Runs the Poseidon permutation on the given state.
-pub(crate) fn permute<F: FieldExt, S: Spec<F, T, RATE>, const T: usize, const RATE: usize>(
+pub(crate) fn permute<
+    F: FromUniformBytes<64> + Ord,
+    S: Spec<F, T, RATE>,
+    const T: usize,
+    const RATE: usize,
+>(
     state: &mut State<F, T>,
     mds: &Mds<F, T>,
     round_constants: &[[F; T]],
@@ -93,7 +101,7 @@ pub(crate) fn permute<F: FieldExt, S: Spec<F, T, RATE>, const T: usize, const RA
     let r_p = S::partial_rounds();
 
     let apply_mds = |state: &mut State<F, T>| {
-        let mut new_state = [F::zero(); T];
+        let mut new_state = [F::ZERO; T];
         // Matrix multiplication
         #[allow(clippy::needless_range_loop)]
         for i in 0..T {
@@ -131,7 +139,12 @@ pub(crate) fn permute<F: FieldExt, S: Spec<F, T, RATE>, const T: usize, const RA
         });
 }
 
-fn poseidon_sponge<F: FieldExt, S: Spec<F, T, RATE>, const T: usize, const RATE: usize>(
+fn poseidon_sponge<
+    F: FromUniformBytes<64> + Ord,
+    S: Spec<F, T, RATE>,
+    const T: usize,
+    const RATE: usize,
+>(
     state: &mut State<F, T>,
     input: Option<(&Absorbing<F, RATE>, usize)>,
     mds_matrix: &Mds<F, T>,
@@ -189,7 +202,7 @@ impl<F: fmt::Debug, const RATE: usize> Absorbing<F, RATE> {
 
 /// A Poseidon sponge.
 pub(crate) struct Sponge<
-    F: FieldExt,
+    F: FromUniformBytes<64> + Ord,
     S: Spec<F, T, RATE>,
     M: SpongeMode,
     const T: usize,
@@ -203,7 +216,7 @@ pub(crate) struct Sponge<
     _marker: PhantomData<S>,
 }
 
-impl<F: FieldExt, S: Spec<F, T, RATE>, const T: usize, const RATE: usize>
+impl<F: FromUniformBytes<64> + Ord, S: Spec<F, T, RATE>, const T: usize, const RATE: usize>
     Sponge<F, S, Absorbing<F, RATE>, T, RATE>
 {
     /// Constructs a new sponge for the given Poseidon specification.
@@ -211,7 +224,7 @@ impl<F: FieldExt, S: Spec<F, T, RATE>, const T: usize, const RATE: usize>
         let (round_constants, mds_matrix, _) = S::constants();
 
         let mode = Absorbing([None; RATE]);
-        let mut state = [F::zero(); T];
+        let mut state = [F::ZERO; T];
         state[(RATE + layout) % T] = initial_capacity_element;
 
         Sponge {
@@ -268,7 +281,7 @@ impl<F: FieldExt, S: Spec<F, T, RATE>, const T: usize, const RATE: usize>
     }
 }
 
-impl<F: FieldExt, S: Spec<F, T, RATE>, const T: usize, const RATE: usize>
+impl<F: FromUniformBytes<64> + Ord, S: Spec<F, T, RATE>, const T: usize, const RATE: usize>
     Sponge<F, S, Squeezing<F, RATE>, T, RATE>
 {
     /// Squeezes an element from the sponge.
@@ -292,7 +305,7 @@ impl<F: FieldExt, S: Spec<F, T, RATE>, const T: usize, const RATE: usize>
 }
 
 /// A domain in which a Poseidon hash function is being used.
-pub trait Domain<F: FieldExt, const RATE: usize> {
+pub trait Domain<F: PrimeField, const RATE: usize> {
     /// Iterator that outputs padding field elements.
     type Padding: IntoIterator<Item = F>;
 
@@ -319,7 +332,7 @@ pub trait Domain<F: FieldExt, const RATE: usize> {
 #[derive(Clone, Copy, Debug)]
 pub struct ConstantLength<const L: usize>;
 
-impl<F: FieldExt, const RATE: usize, const L: usize> Domain<F, RATE> for ConstantLength<L> {
+impl<F: PrimeField, const RATE: usize, const L: usize> Domain<F, RATE> for ConstantLength<L> {
     type Padding = iter::Take<iter::Repeat<F>>;
 
     fn name() -> String {
@@ -339,7 +352,7 @@ impl<F: FieldExt, const RATE: usize, const L: usize> Domain<F, RATE> for Constan
         // Poseidon authors encode the constant length into the capacity element, ensuring
         // that inputs of different lengths do not share the same permutation.
         let k = (L + RATE - 1) / RATE;
-        iter::repeat(F::zero()).take(k * RATE - L)
+        iter::repeat(F::ZERO).take(k * RATE - L)
     }
 }
 
@@ -347,7 +360,7 @@ impl<F: FieldExt, const RATE: usize, const L: usize> Domain<F, RATE> for Constan
 #[derive(Clone, Copy, Debug)]
 pub struct ConstantLengthIden3<const L: usize>;
 
-impl<F: FieldExt, const RATE: usize, const L: usize> Domain<F, RATE> for ConstantLengthIden3<L> {
+impl<F: PrimeField, const RATE: usize, const L: usize> Domain<F, RATE> for ConstantLengthIden3<L> {
     type Padding = <ConstantLength<L> as Domain<F, RATE>>::Padding;
 
     fn name() -> String {
@@ -356,7 +369,7 @@ impl<F: FieldExt, const RATE: usize, const L: usize> Domain<F, RATE> for Constan
 
     // iden3's scheme do not set any capacity mark
     fn initial_capacity_element() -> F {
-        F::zero()
+        F::ZERO
     }
 
     fn padding(input_len: usize) -> Self::Padding {
@@ -372,7 +385,7 @@ impl<F: FieldExt, const RATE: usize, const L: usize> Domain<F, RATE> for Constan
 #[derive(Clone, Copy, Debug)]
 pub struct VariableLengthIden3;
 
-impl<F: FieldExt, const RATE: usize> Domain<F, RATE> for VariableLengthIden3 {
+impl<F: PrimeField, const RATE: usize> Domain<F, RATE> for VariableLengthIden3 {
     type Padding = <ConstantLength<1> as Domain<F, RATE>>::Padding;
 
     fn name() -> String {
@@ -386,7 +399,7 @@ impl<F: FieldExt, const RATE: usize> Domain<F, RATE> for VariableLengthIden3 {
 
     fn padding(input_len: usize) -> Self::Padding {
         let k = input_len % RATE;
-        iter::repeat(F::zero()).take(if k == 0 { 0 } else { RATE - k })
+        iter::repeat(F::ZERO).take(if k == 0 { 0 } else { RATE - k })
     }
 
     fn layout(width: usize) -> usize {
@@ -396,7 +409,7 @@ impl<F: FieldExt, const RATE: usize> Domain<F, RATE> for VariableLengthIden3 {
 
 /// A Poseidon hash function, built around a sponge.
 pub struct Hash<
-    F: FieldExt,
+    F: FromUniformBytes<64> + Ord,
     S: Spec<F, T, RATE>,
     D: Domain<F, RATE>,
     const T: usize,
@@ -406,8 +419,13 @@ pub struct Hash<
     _domain: PhantomData<D>,
 }
 
-impl<F: FieldExt, S: Spec<F, T, RATE>, D: Domain<F, RATE>, const T: usize, const RATE: usize>
-    fmt::Debug for Hash<F, S, D, T, RATE>
+impl<
+        F: FromUniformBytes<64> + Ord,
+        S: Spec<F, T, RATE>,
+        D: Domain<F, RATE>,
+        const T: usize,
+        const RATE: usize,
+    > fmt::Debug for Hash<F, S, D, T, RATE>
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Hash")
@@ -420,8 +438,13 @@ impl<F: FieldExt, S: Spec<F, T, RATE>, D: Domain<F, RATE>, const T: usize, const
     }
 }
 
-impl<F: FieldExt, S: Spec<F, T, RATE>, D: Domain<F, RATE>, const T: usize, const RATE: usize>
-    Hash<F, S, D, T, RATE>
+impl<
+        F: FromUniformBytes<64> + Ord,
+        S: Spec<F, T, RATE>,
+        D: Domain<F, RATE>,
+        const T: usize,
+        const RATE: usize,
+    > Hash<F, S, D, T, RATE>
 {
     /// Initializes a new hasher.
     pub fn init() -> Self {
@@ -437,8 +460,13 @@ impl<F: FieldExt, S: Spec<F, T, RATE>, D: Domain<F, RATE>, const T: usize, const
     }
 }
 
-impl<F: FieldExt, S: Spec<F, T, RATE>, const T: usize, const RATE: usize, const L: usize>
-    Hash<F, S, ConstantLength<L>, T, RATE>
+impl<
+        F: FromUniformBytes<64> + Ord,
+        S: Spec<F, T, RATE>,
+        const T: usize,
+        const RATE: usize,
+        const L: usize,
+    > Hash<F, S, ConstantLength<L>, T, RATE>
 {
     /// Hashes the given input.
     pub fn hash(mut self, message: [F; L]) -> F {
@@ -452,8 +480,13 @@ impl<F: FieldExt, S: Spec<F, T, RATE>, const T: usize, const RATE: usize, const 
     }
 }
 
-impl<F: FieldExt, S: Spec<F, T, RATE>, const T: usize, const RATE: usize, const L: usize>
-    Hash<F, S, ConstantLengthIden3<L>, T, RATE>
+impl<
+        F: FromUniformBytes<64> + Ord,
+        S: Spec<F, T, RATE>,
+        const T: usize,
+        const RATE: usize,
+        const L: usize,
+    > Hash<F, S, ConstantLengthIden3<L>, T, RATE>
 {
     /// Hashes the given input.
     pub fn hash(mut self, message: [F; L]) -> F {
@@ -467,7 +500,7 @@ impl<F: FieldExt, S: Spec<F, T, RATE>, const T: usize, const RATE: usize, const 
     }
 }
 
-impl<F: FieldExt, S: Spec<F, T, RATE>, const T: usize, const RATE: usize>
+impl<F: FromUniformBytes<64> + Ord, S: Spec<F, T, RATE>, const T: usize, const RATE: usize>
     Hash<F, S, VariableLengthIden3, T, RATE>
 {
     /// Hashes the given input.
@@ -488,7 +521,7 @@ impl<F: FieldExt, S: Spec<F, T, RATE>, const T: usize, const RATE: usize>
 #[cfg(test)]
 mod tests {
     use super::pasta::Fp;
-    use halo2_proofs::arithmetic::FieldExt;
+    use halo2_proofs::ff::PrimeField;
 
     use super::{permute, ConstantLength, Hash, P128Pow5T3, Spec};
     type OrchardNullifier = P128Pow5T3<Fp>;

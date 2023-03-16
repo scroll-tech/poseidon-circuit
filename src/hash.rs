@@ -3,11 +3,11 @@
 use crate::poseidon::primitives::{
     ConstantLengthIden3, Domain, Hash, P128Pow5T3, Spec, VariableLengthIden3,
 };
-use halo2_proofs::arithmetic::FieldExt;
+use halo2_proofs::ff::{FromUniformBytes, PrimeField};
 use halo2_proofs::halo2curves::bn256::Fr;
 
 /// indicate an field can be hashed in merkle tree (2 Fields to 1 Field)
-pub trait Hashable: FieldExt {
+pub trait Hashable: FromUniformBytes<64> + Ord {
     /// the spec type used in circuit for this hashable field
     type SpecType: Spec<Self, 3, 2>;
     /// the domain type used for hash calculation
@@ -65,7 +65,7 @@ use halo2_proofs::{
 
 /// The config for poseidon hash circuit
 #[derive(Clone, Debug)]
-pub struct PoseidonHashConfig<Fp: FieldExt> {
+pub struct PoseidonHashConfig<Fp: PrimeField> {
     permute_config: Pow5Config<Fp, 3, 2>,
     hash_table: [Column<Advice>; 4],
     hash_table_aux: [Column<Advice>; 6],
@@ -123,8 +123,8 @@ impl<Fp: Hashable> PoseidonHashConfig<Fp> {
             let s_continue = meta.query_advice(s_sponge_continue, Rotation::cur());
 
             vec![
-                s_enable.clone() * ctrl * (Expression::Constant(Fp::one()) - ctrl_bool.clone()),
-                s_enable * s_continue * (Expression::Constant(Fp::one()) - ctrl_bool),
+                s_enable.clone() * ctrl * (Expression::Constant(Fp::ONE) - ctrl_bool.clone()),
+                s_enable * s_continue * (Expression::Constant(Fp::ONE) - ctrl_bool),
             ]
         });
 
@@ -147,7 +147,7 @@ impl<Fp: Hashable> PoseidonHashConfig<Fp> {
             let ctrl = meta.query_advice(control, Rotation::prev());
 
             vec![(
-                s_enable * (Expression::Constant(Fp::one()) - s_continue) * ctrl,
+                s_enable * (Expression::Constant(Fp::ONE) - s_continue) * ctrl,
                 control_step_range,
             )]
         });
@@ -162,7 +162,7 @@ impl<Fp: Hashable> PoseidonHashConfig<Fp> {
             vec![
                 s_enable.clone() * s_continue_hash.clone() * (hash_ind - hash_prev.clone()),
                 s_enable
-                    * (Expression::Constant(Fp::one()) - s_continue_hash)
+                    * (Expression::Constant(Fp::ONE) - s_continue_hash)
                     * (hash_out - hash_prev),
             ]
         });
@@ -194,7 +194,7 @@ impl<Fp: Hashable> PoseidonHashConfig<Fp> {
             // hash output: must inherit prev state or apply current control flag (for new hash)
             ret.push(
                 s_enable.clone()
-                    * (Expression::Constant(Fp::one()) - s_continue_hash.clone())
+                    * (Expression::Constant(Fp::ONE) - s_continue_hash.clone())
                     * (inp_hash.clone() - inp_hash_init),
             );
             ret.push(s_enable * s_continue_hash * (inp_hash - inp_hash_prev));
@@ -231,7 +231,7 @@ pub struct PoseidonHashTable<Fp> {
     pub checks: Vec<Option<Fp>>,
 }
 
-impl<Fp: FieldExt> PoseidonHashTable<Fp> {
+impl<Fp: PrimeField> PoseidonHashTable<Fp> {
     /// Add common inputs
     pub fn constant_inputs<'d>(&mut self, src: impl IntoIterator<Item = &'d [Fp; 2]>) {
         let mut new_inps: Vec<_> = src.into_iter().copied().collect();
@@ -279,7 +279,7 @@ impl<Fp: FieldExt> PoseidonHashTable<Fp> {
 
 /// Represent the chip for Poseidon hash table
 #[derive(Debug)]
-pub struct PoseidonHashChip<'d, Fp: FieldExt, const STEP: usize> {
+pub struct PoseidonHashChip<'d, Fp: PrimeField, const STEP: usize> {
     calcs: usize,
     data: &'d PoseidonHashTable<Fp>,
     config: PoseidonHashConfig<Fp>,
@@ -309,7 +309,7 @@ impl<'d, Fp: Hashable, const STEP: usize> PoseidonHashChip<'d, Fp, STEP> {
                     || "constant zero",
                     config.constants[0],
                     0,
-                    || Value::known(Fp::zero()),
+                    || Value::known(Fp::ZERO),
                 )?;
 
                 Ok([c0])
@@ -364,7 +364,7 @@ impl<'d, Fp: Hashable, const STEP: usize> PoseidonHashChip<'d, Fp, STEP> {
 
                 // notice our hash table has a (0, 0, 0) at the beginning
                 for col in config.hash_table {
-                    region.assign_advice(|| "dummy inputs", col, 0, || Value::known(Fp::zero()))?;
+                    region.assign_advice(|| "dummy inputs", col, 0, || Value::known(Fp::ZERO))?;
                 }
 
                 for col in config.hash_table_aux {
@@ -372,7 +372,7 @@ impl<'d, Fp: Hashable, const STEP: usize> PoseidonHashChip<'d, Fp, STEP> {
                         || "dummy aux inputs",
                         col,
                         0,
-                        || Value::known(Fp::zero()),
+                        || Value::known(Fp::ZERO),
                     )?;
                 }
 
@@ -380,14 +380,14 @@ impl<'d, Fp: Hashable, const STEP: usize> PoseidonHashChip<'d, Fp, STEP> {
                     || "control aux head",
                     config.control_aux,
                     0,
-                    || Value::known(Fp::zero()),
+                    || Value::known(Fp::ZERO),
                 )?;
 
                 let c_ctrl = region.assign_advice(
                     || "control sponge continue head",
                     config.s_sponge_continue,
                     0,
-                    || Value::known(Fp::zero()),
+                    || Value::known(Fp::ZERO),
                 )?;
 
                 // contraint 0 to zero constant
@@ -396,12 +396,12 @@ impl<'d, Fp: Hashable, const STEP: usize> PoseidonHashChip<'d, Fp, STEP> {
                 let mut is_new_sponge = true;
                 let mut process_start = 0;
                 let mut offset = 1;
-                let mut state: [Fp; 3] = [Fp::zero(); 3];
+                let mut state: [Fp; 3] = [Fp::ZERO; 3];
 
                 for (i, ((inp, control), check)) in
                     inputs_i.zip(controls_i).zip(checks_i).enumerate()
                 {
-                    let control = control.copied().unwrap_or_else(Fp::zero);
+                    let control = control.copied().unwrap_or(Fp::ZERO);
                     offset = i + 1;
 
                     if is_new_sponge {
@@ -411,7 +411,7 @@ impl<'d, Fp: Hashable, const STEP: usize> PoseidonHashChip<'d, Fp, STEP> {
 
                     let inp = inp
                         .map(|[a, b]| [*a, *b])
-                        .unwrap_or_else(|| [Fp::zero(), Fp::zero()]);
+                        .unwrap_or_else(|| [Fp::ZERO, Fp::ZERO]);
 
                     state.iter_mut().skip(1).zip(inp).for_each(|(s, inp)| {
                         if is_new_sponge {
@@ -485,14 +485,14 @@ impl<'d, Fp: Hashable, const STEP: usize> PoseidonHashChip<'d, Fp, STEP> {
                         || format!("state input control_aux_{}", i),
                         config.control_aux,
                         offset,
-                        || Value::known(control.invert().unwrap_or_else(Fp::zero)),
+                        || Value::known(control.invert().unwrap_or(Fp::ZERO)),
                     )?;
 
                     region.assign_advice(
                         || format!("state continue control_{}", i),
                         config.s_sponge_continue,
                         offset,
-                        || Value::known(if is_new_sponge { Fp::zero() } else { Fp::one() }),
+                        || Value::known(if is_new_sponge { Fp::ZERO } else { Fp::ONE }),
                     )?;
 
                     region.assign_advice(
@@ -536,7 +536,7 @@ impl<'d, Fp: Hashable, const STEP: usize> PoseidonHashChip<'d, Fp, STEP> {
                     || "control sponge continue last",
                     config.s_sponge_continue,
                     offset,
-                    || Value::known(Fp::zero()),
+                    || Value::known(Fp::ZERO),
                 )?;
 
                 // contraint 0 to tail line
@@ -573,7 +573,7 @@ impl<'d, Fp: Hashable, const STEP: usize> PoseidonHashChip<'d, Fp, STEP> {
     }
 }
 
-impl<Fp: FieldExt, const STEP: usize> Chip<Fp> for PoseidonHashChip<'_, Fp, STEP> {
+impl<Fp: PrimeField, const STEP: usize> Chip<Fp> for PoseidonHashChip<'_, Fp, STEP> {
     type Config = PoseidonHashConfig<Fp>;
     type Loaded = PoseidonHashTable<Fp>;
 
@@ -623,7 +623,7 @@ mod tests {
             Fr::from_str_vartime("1").unwrap(),
             Fr::from_str_vartime("2").unwrap(),
             Fr::from_str_vartime("3").unwrap(),
-            Fr::zero(),
+            FrZERO,
         ];
 
         let supposed_bytes = 50u64;
@@ -716,7 +716,7 @@ mod tests {
             Fr::from_str_vartime("2").unwrap(),
         ];
 
-        let message2 = [Fr::from_str_vartime("50331648").unwrap(), Fr::zero()];
+        let message2 = [Fr::from_str_vartime("50331648").unwrap(), FrZERO];
 
         let k = 8;
         let circuit = PoseidonHashTable {
@@ -729,7 +729,7 @@ mod tests {
 
         let circuit = PoseidonHashTable {
             inputs: vec![message1, message2, message1],
-            controls: vec![Fr::from_u128(64), Fr::from_u128(32), Fr::zero()],
+            controls: vec![Fr::from_u128(64), Fr::from_u128(32), FrZERO],
             checks: Vec::new(),
         };
         let prover = MockProver::run(k, &circuit, vec![]).unwrap();

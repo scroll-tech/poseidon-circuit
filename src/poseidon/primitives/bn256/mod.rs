@@ -104,9 +104,9 @@ mod tests {
         #[allow(clippy::needless_range_loop)]
         for i in 0..3 {
             for j in 0..3 {
-                let expected = if i == j { Fp::one() } else { Fp::zero() };
+                let expected = if i == j { Fp::ONE } else { Fp::ZERO };
                 assert_eq!(
-                    (0..3).fold(Fp::zero(), |acc, k| acc + (mds[i][k] * mds_inv[k][j])),
+                    (0..3).fold(Fp::ZERO, |acc, k| acc + (mds[i][k] * mds_inv[k][j])),
                     expected
                 );
             }

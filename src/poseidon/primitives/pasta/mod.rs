@@ -37,7 +37,7 @@ fn sqrt_tonelli_shanks<F: PrimeField, S: AsRef<[u64]>>(f: &F, tm1d2: S) -> subtl
         let mut j_less_than_v: Choice = 1.into();
 
         for j in 2..max_v {
-            let tmp_is_one = tmp.ct_eq(&F::one());
+            let tmp_is_one = tmp.ct_eq(&F::ZERO);
             let squared = F::conditional_select(&tmp, &z, tmp_is_one).square();
             tmp = F::conditional_select(&squared, &tmp, tmp_is_one);
             let new_z = F::conditional_select(&z, &squared, tmp_is_one);
@@ -47,7 +47,7 @@ fn sqrt_tonelli_shanks<F: PrimeField, S: AsRef<[u64]>>(f: &F, tm1d2: S) -> subtl
         }
 
         let result = x * z;
-        x = F::conditional_select(&result, &x, b.ct_eq(&F::one()));
+        x = F::conditional_select(&result, &x, b.ct_eq(&F::ZERO));
         z = z.square();
         b *= z;
         v = k;
