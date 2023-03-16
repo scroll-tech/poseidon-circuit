@@ -77,7 +77,7 @@ pub(super) fn generate_mds<F: FromUniformBytes<64> + Ord, const T: usize>(
     let mut mds_inv = [[F::ZERO; T]; T];
     let l = |xs: &[F], j, x: F| {
         let x_j = xs[j];
-        xs.iter().enumerate().fold(F::ZERO, |acc, (m, x_m)| {
+        xs.iter().enumerate().fold(F::ONE, |acc, (m, x_m)| {
             if m == j {
                 acc
             } else {
@@ -99,6 +99,8 @@ pub(super) fn generate_mds<F: FromUniformBytes<64> + Ord, const T: usize>(
 
 #[cfg(test)]
 mod tests {
+    use halo2_proofs::ff::Field;
+
     use super::super::pasta::Fp;
 
     use super::{generate_mds, Grain};

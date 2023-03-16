@@ -25,6 +25,8 @@ impl P128Pow5T3Constants for Fp {
 mod tests {
     use std::marker::PhantomData;
 
+    use halo2_proofs::ff::{Field, FromUniformBytes};
+
     use crate::poseidon::primitives::p128pow5t3::P128Pow5T3;
     use crate::poseidon::primitives::Spec;
 
@@ -41,7 +43,7 @@ mod tests {
         }
     }
 
-    impl<F: P128Pow5T3Constants> Spec<F, 3, 2> for P128Pow5T3Gen<F> {
+    impl<F: P128Pow5T3Constants + FromUniformBytes<64> + Ord> Spec<F, 3, 2> for P128Pow5T3Gen<F> {
         fn full_rounds() -> usize {
             P128Pow5T3::<F>::full_rounds()
         }

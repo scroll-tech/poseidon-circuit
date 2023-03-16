@@ -13,6 +13,7 @@ use halo2_proofs::poly::kzg::strategy::SingleStrategy;
 use halo2_proofs::transcript::{
     Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
 };
+use halo2_proofs::SerdeFormat;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
     plonk::{Circuit, ConstraintSystem, Error},
@@ -78,7 +79,7 @@ fn vk_validity() {
     let vk1 = keygen_vk(&params, &circuit).unwrap();
 
     let mut vk1_buf: Vec<u8> = Vec::new();
-    vk1.write(&mut vk1_buf).unwrap();
+    vk1.write(&mut vk1_buf, SerdeFormat::RawBytes).unwrap();
 
     let circuit = TestCircuit(
         PoseidonHashTable {
@@ -99,7 +100,7 @@ fn vk_validity() {
     let vk2 = keygen_vk(&params, &circuit).unwrap();
 
     let mut vk2_buf: Vec<u8> = Vec::new();
-    vk2.write(&mut vk2_buf).unwrap();
+    vk2.write(&mut vk2_buf, SerdeFormat::RawBytes).unwrap();
 
     assert_eq!(vk1_buf, vk2_buf);
 }

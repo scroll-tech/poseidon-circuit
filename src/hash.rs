@@ -588,6 +588,7 @@ impl<Fp: PrimeField, const STEP: usize> Chip<Fp> for PoseidonHashChip<'_, Fp, ST
 #[cfg(test)]
 mod tests {
     use super::*;
+    use halo2_proofs::ff::Field;
     use halo2_proofs::halo2curves::group::ff::PrimeField;
     use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 
@@ -623,7 +624,7 @@ mod tests {
             Fr::from_str_vartime("1").unwrap(),
             Fr::from_str_vartime("2").unwrap(),
             Fr::from_str_vartime("3").unwrap(),
-            FrZERO,
+            Fr::ZERO,
         ];
 
         let supposed_bytes = 50u64;
@@ -716,7 +717,7 @@ mod tests {
             Fr::from_str_vartime("2").unwrap(),
         ];
 
-        let message2 = [Fr::from_str_vartime("50331648").unwrap(), FrZERO];
+        let message2 = [Fr::from_str_vartime("50331648").unwrap(), Fr::ZERO];
 
         let k = 8;
         let circuit = PoseidonHashTable {
@@ -729,7 +730,7 @@ mod tests {
 
         let circuit = PoseidonHashTable {
             inputs: vec![message1, message2, message1],
-            controls: vec![Fr::from_u128(64), Fr::from_u128(32), FrZERO],
+            controls: vec![Fr::from_u128(64), Fr::from_u128(32), Fr::ZERO],
             checks: Vec::new(),
         };
         let prover = MockProver::run(k, &circuit, vec![]).unwrap();

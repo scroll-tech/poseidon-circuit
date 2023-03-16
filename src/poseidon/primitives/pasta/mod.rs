@@ -29,7 +29,7 @@ fn sqrt_tonelli_shanks<F: PrimeField, S: AsRef<[u64]>>(f: &F, tm1d2: S) -> subtl
     let mut b = x * w;
 
     // Initialize z as the 2^S root of unity.
-    let mut z = F::root_of_unity();
+    let mut z = F::ROOT_OF_UNITY;
 
     for max_v in (1..=F::S).rev() {
         let mut k = 1;
