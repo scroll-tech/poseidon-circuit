@@ -3,6 +3,7 @@
 
 mod control;
 mod full_round;
+mod instruction;
 mod loop_chip;
 mod params;
 mod septidon_chip;

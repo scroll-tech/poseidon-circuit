@@ -8,6 +8,7 @@ use super::loop_chip::LoopChip;
 use super::septuple_round::SeptupleRoundChip;
 use super::state::Cell;
 use super::transition_round::TransitionRoundChip;
+use super::util::map_array;
 use crate::septidon::params::round_constant;
 
 /// The configuration of the permutation chip.
@@ -92,6 +93,25 @@ impl SeptidonChip {
     /// How many rows are used per permutation.
     pub fn height_per_permutation() -> usize {
         8
+    }
+
+    fn final_offset() -> usize {
+        Self::height_per_permutation() - 1
+    }
+
+    /// Return the cells containing the initial state. The parent chip must constrain these cells.
+    /// Cells are relative to the row 0 of a region of a permutation.
+    pub fn initial_state_cells(&self) -> [Cell; 3] {
+        self.full_round_chip.input_cells()
+    }
+
+    /// Return the cells containing the final state. The parent chip must constrain these cells.
+    /// Cells are relative to the row 0 of a region of a permutation.
+    pub fn final_state_cells(&self) -> [Cell; 3] {
+        let relative_cells = self.transition_chip.input();
+        map_array(&relative_cells, |cell| {
+            cell.rotated(Self::final_offset() as i32)
+        })
     }
 
     /// Assign the witness of a permutation into the given region.

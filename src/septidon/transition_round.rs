@@ -68,6 +68,7 @@ impl TransitionRoundChip {
     }
 
     /// Return the input cells of this round, relative to the signal.
+    // TODO: rename because it is also used as final state.
     pub fn input(&self) -> [Cell; 3] {
         // The input to the transition round is vertical in the transition column.
         [

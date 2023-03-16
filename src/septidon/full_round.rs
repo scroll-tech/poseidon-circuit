@@ -1,6 +1,6 @@
 use super::loop_chip::LoopBody;
 use super::params::mds;
-use super::state::{FullState, SBox};
+use super::state::{Cell, FullState, SBox};
 use super::util::matmul;
 use super::util::query;
 use crate::septidon::util::{join_values, split_values};
@@ -27,6 +27,10 @@ impl FullRoundChip {
     fn full_round_expr(&self, meta: &mut VirtualCells<'_, F>) -> [Expression<F>; 3] {
         let sbox_out = self.0.map(|sbox: &SBox| sbox.output_expr(meta));
         matmul::expr(&mds(), sbox_out)
+    }
+
+    pub fn input_cells(&self) -> [Cell; 3] {
+        self.0.map(|sbox| sbox.input.clone())
     }
 
     /// Assign the witness.
