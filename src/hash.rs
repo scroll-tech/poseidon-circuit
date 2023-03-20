@@ -18,7 +18,7 @@ mod chip_long {
 
 mod chip_short {
     use super::{SpongeChip, SpongeConfig};
-    use crate::septidon::SeptidonChip;
+    use crate::poseidon::SeptidonChip;
     /// The configuration of the Poseidon hash chip.
     pub type PoseidonHashConfig<F> = SpongeConfig<F, SeptidonChip>;
     /// The Poseidon hash chip.
@@ -676,8 +676,7 @@ impl<Fp: FieldExt, const STEP: usize, PC: PermuteChip<Fp>> Chip<Fp>
 mod tests {
     use std::marker::PhantomData;
 
-    use crate::poseidon::Pow5Chip;
-    use crate::septidon::SeptidonChip;
+    use crate::poseidon::{Pow5Chip, SeptidonChip};
 
     use super::*;
     use halo2_proofs::halo2curves::group::ff::PrimeField;

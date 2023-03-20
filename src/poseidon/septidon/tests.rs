@@ -3,8 +3,7 @@ use halo2_proofs::dev::MockProver;
 use halo2_proofs::halo2curves::bn256::Fr as F;
 use halo2_proofs::plonk::{Circuit, ConstraintSystem, Error};
 
-use super::SeptidonChip;
-use crate::septidon::util::join_values;
+use super::{util::join_values, SeptidonChip};
 
 #[test]
 fn septidon_permutation() {
