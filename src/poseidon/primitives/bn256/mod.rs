@@ -25,9 +25,7 @@ impl P128Pow5T3Constants for Fp {
 mod tests {
     use std::marker::PhantomData;
 
-    use crate::poseidon::primitives::p128pow5t3::P128Pow5T3;
-    use crate::poseidon::primitives::p128pow5t3_compact::P128Pow5T3CompactSpec;
-    use crate::poseidon::primitives::{permute, Spec};
+    use crate::poseidon::primitives::{permute, P128Pow5T3, P128Pow5T3Compact, Spec};
 
     use super::*;
 
@@ -152,8 +150,8 @@ mod tests {
         let output_compact = {
             let mut state = input.clone();
 
-            let (rc, mds, _inv) = P128Pow5T3CompactSpec::<Fp>::constants();
-            permute::<Fp, P128Pow5T3CompactSpec<Fp>, 3, 2>(&mut state, &mds, &rc[..]);
+            let (rc, mds, _inv) = P128Pow5T3Compact::<Fp>::constants();
+            permute::<Fp, P128Pow5T3Compact<Fp>, 3, 2>(&mut state, &mds, &rc[..]);
 
             // This is the compact form with 1 constant per partial round.
             for i in 4..4 + 57 {
