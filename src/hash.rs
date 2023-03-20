@@ -173,7 +173,7 @@ impl<Fp: Hashable, PC: PermuteChip<Fp>> PoseidonHashConfig<Fp, PC> {
             vec![
                 s_enable.clone()
                     * (ctrl + Expression::Constant(Fp::from_u128(step as u128)) - ctrl_prev),
-                s_enable * (Expression::Constant(Fp::one()) - ctrl_bool),
+                s_enable * (Expression::Constant(Fp::ONE) - ctrl_bool),
             ]
         });
 
@@ -278,7 +278,7 @@ impl<Fp: PrimeField> PoseidonHashTable<Fp> {
         for (a, b, c) in src {
             self.inputs.push([*a, *b]);
             self.checks.push(Some(*c));
-            self.controls.push(Fp::zero());
+            self.controls.push(Fp::ZERO);
         }
     }
 

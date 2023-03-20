@@ -90,11 +90,11 @@ pub mod matmul {
 /// Returns `when_true` when `selector == 1`, and returns `when_false` when
 /// `selector == 0`. `selector` needs to be boolean.
 pub mod select {
-    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+    use halo2_proofs::{ff::PrimeField, plonk::Expression};
 
     /// Returns the `when_true` expression when the selector is true, else
     /// returns the `when_false` expression.
-    pub fn expr<F: FieldExt>(
+    pub fn expr<F: PrimeField>(
         selector: Expression<F>,
         when_true: Expression<F>,
         when_false: Expression<F>,
@@ -105,25 +105,25 @@ pub mod select {
 
     /// Returns the `when_true` value when the selector is true, else returns
     /// the `when_false` value.
-    pub fn value<F: FieldExt>(selector: F, when_true: F, when_false: F) -> F {
-        selector * when_true + (F::one() - selector) * when_false
+    pub fn value<F: PrimeField>(selector: F, when_true: F, when_false: F) -> F {
+        selector * when_true + (F::ONE - selector) * when_false
     }
 }
 
 /// Gadget for boolean OR.
 pub mod or {
-    use halo2_proofs::{arithmetic::FieldExt, plonk::Expression};
+    use halo2_proofs::{ff::PrimeField, plonk::Expression};
 
     /// Return (a OR b), assuming a and b are boolean expressions.
-    pub fn expr<F: FieldExt>(a: Expression<F>, b: Expression<F>) -> Expression<F> {
+    pub fn expr<F: PrimeField>(a: Expression<F>, b: Expression<F>) -> Expression<F> {
         let one = Expression::Constant(F::from(1));
         // a OR b <=> !(!a AND !b)
         one.clone() - ((one.clone() - a) * (one.clone() - b))
     }
 
     /// Return (a OR b), assuming a and b are boolean values.
-    pub fn value<F: FieldExt>(a: F, b: F) -> F {
-        let one = F::one();
+    pub fn value<F: PrimeField>(a: F, b: F) -> F {
+        let one = F::ONE;
         // a OR b <=> !(!a AND !b)
         one - ((one - a) * (one - b))
     }
