@@ -9,7 +9,7 @@ edition = "2021"
 halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2022_09_10" }
 lazy_static = "1.4.0"
 thiserror = "1.0"
-bitvec = "0.22"
+bitvec = "1"
 
 [patch."https://github.com/privacy-scaling-explorations/halo2.git"]
 halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "halo2-ecc-snark-verifier-0220" }
@@ -23,10 +23,6 @@ poseidon = { git = "https://github.com/scroll-tech/poseidon.git", branch = "halo
 
 [patch."https://github.com/privacy-scaling-explorations/halo2curves.git"]
 halo2curves = { git = "https://github.com/scroll-tech/halo2curves.git", branch = "halo2-ecc-snark-verifier-0220" }
-
-[patch.crates-io]
-# temporary solution to funty@1.2.0 being yanked, tracking issue: https://github.com/ferrilab/funty/issues/7
-funty = { git = "https://github.com/ferrilab/funty/", rev = "7ef0d890fbcd8b3def1635ac1a877fc298488446" }
 
 [features]
 # printout the layout of circuits for demo and some unittests

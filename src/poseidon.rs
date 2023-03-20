@@ -7,7 +7,7 @@ use std::marker::PhantomData;
 use halo2_proofs::{
     circuit::{AssignedCell, Chip, Layouter},
     ff::{Field, FromUniformBytes},
-    plonk::Error,
+    plonk::{ConstraintSystem, Error},
 };
 
 mod pow5;
@@ -15,6 +15,7 @@ pub use pow5::{Pow5Chip, Pow5Config, StateWord, Var};
 
 pub mod primitives;
 use primitives::{Absorbing, ConstantLength, Domain, Spec, SpongeMode, Squeezing, State};
+use std::fmt::Debug as DebugT;
 
 /// A word from the padded input to a Poseidon sponge.
 #[derive(Clone, Debug)]
@@ -23,6 +24,15 @@ pub enum PaddedWord<F: Field> {
     Message(AssignedCell<F, F>),
     /// A padding word, that will be fixed in the circuit parameters.
     Padding(F),
+}
+
+/// This trait is the interface to chips that implement a permutation.
+pub trait PermuteChip<F: FieldExt>: Chip<F> + Clone + DebugT {
+    /// Configure the permutation chip.
+    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config;
+
+    /// Get a chip from its config.
+    fn construct(config: Self::Config) -> Self;
 }
 
 /// The set of circuit instructions required to use the Poseidon permutation.
@@ -291,7 +301,7 @@ impl<
             .enumerate()
         {
             self.sponge
-                .absorb(layouter.namespace(|| format!("absorb_{}", i)), value)?;
+                .absorb(layouter.namespace(|| format!("absorb_{i}")), value)?;
         }
         self.sponge
             .finish_absorbing(layouter.namespace(|| "finish absorbing"))?

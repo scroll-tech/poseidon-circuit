@@ -18,6 +18,7 @@ use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
     plonk::{Circuit, ConstraintSystem, Error},
 };
+use poseidon_circuit::poseidon::Pow5Chip;
 use poseidon_circuit::{hash::*, DEFAULT_STEP};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -26,7 +27,7 @@ struct TestCircuit(PoseidonHashTable<Fp>, usize);
 
 // test circuit derived from table data
 impl Circuit<Fp> for TestCircuit {
-    type Config = PoseidonHashConfig<Fp>;
+    type Config = PoseidonHashConfig<Fp, Pow5Chip<Fp, 3, 2>>;
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
@@ -34,7 +35,7 @@ impl Circuit<Fp> for TestCircuit {
     }
 
     fn configure(meta: &mut ConstraintSystem<Fp>) -> Self::Config {
-        let hash_tbl = [0; 4].map(|_| meta.advice_column());
+        let hash_tbl = [0; 5].map(|_| meta.advice_column());
         PoseidonHashConfig::configure_sub(meta, hash_tbl, DEFAULT_STEP)
     }
 
@@ -43,7 +44,13 @@ impl Circuit<Fp> for TestCircuit {
         config: Self::Config,
         mut layouter: impl Layouter<Fp>,
     ) -> Result<(), Error> {
-        let chip = PoseidonHashChip::<Fp, DEFAULT_STEP>::construct(config, &self.0, self.1);
+        let chip = PoseidonHashChip::<Fp, DEFAULT_STEP, Pow5Chip<Fp, 3, 2>>::construct(
+            config,
+            &self.0,
+            self.1,
+            false,
+            Some(Fp::from(42u64)),
+        );
         chip.load(&mut layouter)
     }
 }
@@ -121,10 +128,12 @@ fn proof_and_verify() {
                     Fp::from_str_vartime("2").unwrap(),
                 ],
                 [
-                    Fp::from_str_vartime("0").unwrap(),
+                    Fp::from_str_vartime("30").unwrap(),
                     Fp::from_str_vartime("1").unwrap(),
                 ],
+                [Fp::from_str_vartime("65536").unwrap(), Fp::zero()],
             ],
+            controls: vec![Fp::zero(), Fp::from(46u64), Fp::from(14u64)],
             ..Default::default()
         },
         4,

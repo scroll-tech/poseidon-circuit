@@ -28,7 +28,8 @@ mod tests {
     use halo2_proofs::ff::{Field, FromUniformBytes};
 
     use crate::poseidon::primitives::p128pow5t3::P128Pow5T3;
-    use crate::poseidon::primitives::Spec;
+    use crate::poseidon::primitives::p128pow5t3_compact::P128Pow5T3CompactSpec;
+    use crate::poseidon::primitives::{permute, Spec};
 
     use super::*;
 
@@ -113,5 +114,58 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn test_compact_constants() {
+        let input = [
+            Fp::from_raw([
+                0x0000_0000_0000_0000,
+                0x0000_0000_0000_0000,
+                0x0000_0000_0000_0000,
+                0x0000_0000_0000_0000,
+            ]),
+            Fp::from_raw([
+                0x0000_0000_0000_0001,
+                0x0000_0000_0000_0000,
+                0x0000_0000_0000_0000,
+                0x0000_0000_0000_0000,
+            ]),
+            Fp::from_raw([
+                0x0000_0000_0000_0002,
+                0x0000_0000_0000_0000,
+                0x0000_0000_0000_0000,
+                0x0000_0000_0000_0000,
+            ]),
+        ];
+
+        let output = {
+            let mut state = input.clone();
+
+            let (rc, mds, _inv) = P128Pow5T3::<Fp>::constants();
+            permute::<Fp, P128Pow5T3<Fp>, 3, 2>(&mut state, &mds, &rc[..]);
+
+            // This is the raw form with 3 constants per round.
+            assert_ne!(rc[4][1], Fp::zero());
+
+            state
+        };
+
+        let output_compact = {
+            let mut state = input.clone();
+
+            let (rc, mds, _inv) = P128Pow5T3CompactSpec::<Fp>::constants();
+            permute::<Fp, P128Pow5T3CompactSpec<Fp>, 3, 2>(&mut state, &mds, &rc[..]);
+
+            // This is the compact form with 1 constant per partial round.
+            for i in 4..4 + 57 {
+                assert_eq!(rc[i][1], Fp::zero());
+                assert_eq!(rc[i][2], Fp::zero());
+            }
+
+            state
+        };
+
+        assert_eq!(output, output_compact);
     }
 }

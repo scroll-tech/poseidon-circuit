@@ -33,7 +33,7 @@ impl<Fp: P128Pow5T3Constants + FromUniformBytes<64> + Ord> Spec<Fp, 3, 2> for P1
     }
 
     fn sbox(val: Fp) -> Fp {
-        val.pow_vartime(&[5])
+        val.pow_vartime([5])
     }
 
     fn secure_mds() -> usize {

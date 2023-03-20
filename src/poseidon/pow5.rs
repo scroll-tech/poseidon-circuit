@@ -8,9 +8,11 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
+use crate::Hashable;
+
 use super::{
     primitives::{Absorbing, Domain, Mds, Spec, Squeezing, State},
-    PaddedWord, PoseidonInstructions, PoseidonSpongeInstructions,
+    PaddedWord, PermuteChip, PoseidonInstructions, PoseidonSpongeInstructions,
 };
 
 /// Trait for a variable in the circuit.
@@ -56,7 +58,7 @@ pub struct Pow5Config<F: PrimeField, const WIDTH: usize, const RATE: usize> {
 ///
 /// The chip is implemented using a single round per row for full rounds, and two rounds
 /// per row for partial rounds.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Pow5Chip<F: PrimeField, const WIDTH: usize, const RATE: usize> {
     config: Pow5Config<F, WIDTH, RATE>,
 }
@@ -260,6 +262,26 @@ impl<F: PrimeField, const WIDTH: usize, const RATE: usize> Chip<F> for Pow5Chip<
     }
 }
 
+impl<F: Hashable> PermuteChip<F> for Pow5Chip<F, 3, 2> {
+    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+        let state = [0; 3].map(|_| meta.advice_column());
+        let partial_sbox = meta.advice_column();
+        let constants = [0; 6].map(|_| meta.fixed_column());
+
+        Pow5Chip::configure::<F::SpecType>(
+            meta,
+            state,
+            partial_sbox,
+            constants[..3].try_into().unwrap(), //rc_a
+            constants[3..].try_into().unwrap(), //rc_b
+        )
+    }
+
+    fn construct(config: Self::Config) -> Self {
+        Self::construct(config)
+    }
+}
+
 impl<
         F: FromUniformBytes<64> + Ord,
         S: Spec<F, WIDTH, RATE>,
@@ -349,7 +371,7 @@ impl<
                 let mut state = Vec::with_capacity(WIDTH);
                 let mut load_state_word = |i: usize, value: F| -> Result<_, Error> {
                     let var = region.assign_advice_from_constant(
-                        || format!("state_{}", i),
+                        || format!("state_{i}"),
                         config.state[i],
                         0,
                         value,
@@ -388,7 +410,7 @@ impl<
                     initial_state[i]
                         .0
                         .copy_advice(
-                            || format!("load state_{}", i),
+                            || format!("load state_{i}"),
                             &mut region,
                             config.state[i],
                             0,
@@ -404,7 +426,7 @@ impl<
                     let constraint_var = match input.0[i].clone() {
                         Some(PaddedWord::Message(word)) => word,
                         Some(PaddedWord::Padding(padding_value)) => region.assign_fixed(
-                            || format!("load pad_{}", i),
+                            || format!("load pad_{i}"),
                             config.rc_b[i],
                             1,
                             || Value::known(padding_value),
@@ -413,7 +435,7 @@ impl<
                     };
                     constraint_var
                         .copy_advice(
-                            || format!("load input_{}", i),
+                            || format!("load input_{i}"),
                             &mut region,
                             config.state[i],
                             1,
@@ -427,7 +449,7 @@ impl<
                 let constrain_output_word = |i: usize| {
                     region
                         .assign_advice(
-                            || format!("load output_{}", i),
+                            || format!("load output_{i}"),
                             config.state[i],
                             2,
                             || {
@@ -461,7 +483,7 @@ impl<
 
 /// A word in the Poseidon state.
 #[derive(Clone, Debug)]
-pub struct StateWord<F: PrimeField>(AssignedCell<F, F>);
+pub struct StateWord<F: PrimeField>(pub AssignedCell<F, F>);
 
 impl<F: PrimeField> From<StateWord<F>> for AssignedCell<F, F> {
     fn from(state_word: StateWord<F>) -> AssignedCell<F, F> {
@@ -574,7 +596,7 @@ impl<F: PrimeField, const WIDTH: usize> Pow5State<F, WIDTH> {
             let r: Vec<_> = Some(r_0).into_iter().chain(r_i).collect();
 
             region.assign_advice(
-                || format!("round_{} partial_sbox", round),
+                || format!("round_{round} partial_sbox"),
                 config.partial_sbox,
                 offset,
                 || r[0],
@@ -635,7 +657,7 @@ impl<F: PrimeField, const WIDTH: usize> Pow5State<F, WIDTH> {
         let load_state_word = |i: usize| {
             initial_state[i]
                 .0
-                .copy_advice(|| format!("load state_{}", i), region, config.state[i], 0)
+                .copy_advice(|| format!("load state_{i}"), region, config.state[i], 0)
                 .map(StateWord)
         };
 
@@ -657,7 +679,7 @@ impl<F: PrimeField, const WIDTH: usize> Pow5State<F, WIDTH> {
         // Load the round constants.
         let mut load_round_constant = |i: usize| {
             region.assign_fixed(
-                || format!("round_{} rc_{}", round, i),
+                || format!("round_{round} rc_{i}"),
                 config.rc_a[i],
                 offset,
                 || Value::known(config.round_constants[round][i]),
@@ -673,7 +695,7 @@ impl<F: PrimeField, const WIDTH: usize> Pow5State<F, WIDTH> {
         let next_state_word = |i: usize| {
             let value = next_state[i];
             let var = region.assign_advice(
-                || format!("round_{} state_{}", next_round, i),
+                || format!("round_{next_round} state_{i}"),
                 config.state[i],
                 offset + 1,
                 || value,
