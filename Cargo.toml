@@ -15,6 +15,8 @@ bitvec = "1"
 halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "scroll-dev-1220" }
 
 [features]
+# Use an implementation using fewer rows (8) per permutation.
+short = []
 # printout the layout of circuits for demo and some unittests
 print_layout = ["halo2_proofs/dev-graph"]
 
