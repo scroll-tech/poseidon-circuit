@@ -1,4 +1,4 @@
-use crate::septidon::params;
+use super::params;
 use halo2_proofs::circuit::{Region, Value};
 use halo2_proofs::halo2curves::bn256::Fr as F;
 use halo2_proofs::plonk::{

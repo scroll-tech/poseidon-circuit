@@ -1,6 +1,7 @@
-use crate::poseidon::primitives::p128pow5t3_compact::{P128Pow5T3CompactSpec, P128Pow5T3Constants};
-use crate::poseidon::primitives::Mds as MdsT;
-use crate::poseidon::primitives::Spec;
+use super::super::primitives::{
+    p128pow5t3_compact::{P128Pow5T3CompactSpec, P128Pow5T3Constants},
+    Mds as MdsT, Spec,
+};
 use lazy_static::lazy_static;
 
 /// This implementation can be limited to gate degree 5. However, this mode will not work with
