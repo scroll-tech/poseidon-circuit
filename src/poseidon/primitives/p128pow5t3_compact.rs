@@ -1,19 +1,19 @@
 use halo2_proofs::ff::{FromUniformBytes, PrimeField};
 use std::marker::PhantomData;
 
-pub use super::p128pow5t3::P128Pow5T3Constants;
+use super::p128pow5t3::P128Pow5T3Constants;
 use super::{Mds, Spec};
 
 /// Poseidon-128 using the $x^5$ S-box, with a width of 3 field elements, and the
 /// standard number of rounds for 128-bit security "with margin".
 ///
 #[derive(Debug)]
-pub struct P128Pow5T3CompactSpec<Fp> {
+pub struct P128Pow5T3Compact<Fp> {
     _marker: PhantomData<Fp>,
 }
 
 impl<Fp: P128Pow5T3Constants + FromUniformBytes<64> + Ord> Spec<Fp, 3, 2>
-    for P128Pow5T3CompactSpec<Fp>
+    for P128Pow5T3Compact<Fp>
 {
     fn full_rounds() -> usize {
         8

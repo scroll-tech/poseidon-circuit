@@ -1,8 +1,8 @@
-use super::{params::F, util::map_array, SeptidonChip};
-use crate::poseidon::{
+use super::super::{
     primitives::{Spec, State},
     PermuteChip, PoseidonInstructions, StateWord, Var,
 };
+use super::{params::F, util::map_array, SeptidonChip};
 use halo2_proofs::{
     circuit::{Chip, Layouter},
     plonk::{ConstraintSystem, Error},

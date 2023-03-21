@@ -1,6 +1,4 @@
-use crate::poseidon::primitives::p128pow5t3_compact::{P128Pow5T3CompactSpec, P128Pow5T3Constants};
-use crate::poseidon::primitives::Mds as MdsT;
-use crate::poseidon::primitives::Spec;
+use super::super::primitives::{Mds as MdsT, P128Pow5T3Compact, Spec};
 use lazy_static::lazy_static;
 
 /// This implementation can be limited to gate degree 5. However, this mode will not work with
@@ -30,20 +28,14 @@ pub mod sbox {
 pub type Mds = MdsT<F, 3>;
 
 lazy_static! {
-    static ref MDS: Mds = F::mds();
-}
-
-pub fn mds() -> &'static Mds {
-    &MDS
-}
-
-lazy_static! {
-    static ref ROUND_CONSTANTS: Vec<[F; 3]> = {
-        let (rc, _, _) = P128Pow5T3CompactSpec::<F>::constants();
-        rc
-    };
+    // Cache the round constants and the MDS matrix (and unused inverse MDS matrix).
+    static ref CONSTANTS: (Vec<[F; 3]>, Mds, Mds) = P128Pow5T3Compact::<F>::constants();
 }
 
 pub fn round_constant(index: usize) -> [F; 3] {
-    ROUND_CONSTANTS[index]
+    CONSTANTS.0[index]
+}
+
+pub fn mds() -> &'static Mds {
+    &CONSTANTS.1
 }

@@ -5,18 +5,18 @@ use halo2_proofs::plonk::{ConstraintSystem, Error};
 use super::control::ControlChip;
 use super::full_round::FullRoundChip;
 use super::loop_chip::LoopChip;
+use super::params::round_constant;
 use super::septuple_round::SeptupleRoundChip;
 use super::state::Cell;
 use super::transition_round::TransitionRoundChip;
 use super::util::map_array;
-use crate::septidon::params::round_constant;
 
 /// The configuration of the permutation chip.
 ///
 /// ```
 /// use halo2_proofs::halo2curves::bn256::Fr as F;
 /// use halo2_proofs::plonk::ConstraintSystem;
-/// use poseidon_circuit::septidon::SeptidonChip;
+/// use poseidon_circuit::poseidon::SeptidonChip;
 ///
 /// let mut cs = ConstraintSystem::<F>::default();
 /// let config = SeptidonChip::configure(&mut cs);

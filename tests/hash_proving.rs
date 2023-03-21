@@ -27,7 +27,7 @@ struct TestCircuit(PoseidonHashTable<Fp>, usize);
 
 // test circuit derived from table data
 impl Circuit<Fp> for TestCircuit {
-    type Config = PoseidonHashConfig<Fp, Pow5Chip<Fp, 3, 2>>;
+    type Config = SpongeConfig<Fp, Pow5Chip<Fp, 3, 2>>;
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
@@ -36,7 +36,7 @@ impl Circuit<Fp> for TestCircuit {
 
     fn configure(meta: &mut ConstraintSystem<Fp>) -> Self::Config {
         let hash_tbl = [0; 5].map(|_| meta.advice_column());
-        PoseidonHashConfig::configure_sub(meta, hash_tbl, DEFAULT_STEP)
+        SpongeConfig::configure_sub(meta, hash_tbl, DEFAULT_STEP)
     }
 
     fn synthesize(
@@ -44,7 +44,7 @@ impl Circuit<Fp> for TestCircuit {
         config: Self::Config,
         mut layouter: impl Layouter<Fp>,
     ) -> Result<(), Error> {
-        let chip = PoseidonHashChip::<Fp, DEFAULT_STEP, Pow5Chip<Fp, 3, 2>>::construct(
+        let chip = SpongeChip::<Fp, DEFAULT_STEP, Pow5Chip<Fp, 3, 2>>::construct(
             config,
             &self.0,
             self.1,

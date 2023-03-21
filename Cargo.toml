@@ -25,6 +25,8 @@ poseidon = { git = "https://github.com/scroll-tech/poseidon.git", branch = "halo
 halo2curves = { git = "https://github.com/scroll-tech/halo2curves.git", branch = "halo2-ecc-snark-verifier-0220" }
 
 [features]
+# Use an implementation using fewer rows (8) per permutation.
+short = []
 # printout the layout of circuits for demo and some unittests
 # print_layout = ["halo2_proofs/dev-graph"]
 

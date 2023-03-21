@@ -7,6 +7,33 @@ use halo2_proofs::circuit::AssignedCell;
 use halo2_proofs::ff::{FromUniformBytes, PrimeField};
 use halo2_proofs::halo2curves::bn256::Fr;
 
+mod chip_long {
+    use super::{SpongeChip, SpongeConfig};
+    use crate::poseidon::Pow5Chip;
+    /// The configuration of the Poseidon hash chip.
+    pub type PoseidonHashConfig<F> = SpongeConfig<F, Pow5Chip<F, 3, 2>>;
+    /// The Poseidon hash chip.
+    pub type PoseidonHashChip<'d, F, const STEP: usize> =
+        SpongeChip<'d, F, STEP, Pow5Chip<F, 3, 2>>;
+}
+
+mod chip_short {
+    use super::{SpongeChip, SpongeConfig};
+    use crate::poseidon::SeptidonChip;
+    /// The configuration of the Poseidon hash chip.
+    pub type PoseidonHashConfig<F> = SpongeConfig<F, SeptidonChip>;
+    /// The Poseidon hash chip.
+    pub type PoseidonHashChip<'d, F, const STEP: usize> = SpongeChip<'d, F, STEP, SeptidonChip>;
+}
+
+// By default, use a chip with double rounds over 38 rows.
+#[cfg(not(feature = "short"))]
+pub use chip_long::*;
+
+// If feature `short` is enabled, use the chip with septuple rounds on 8 rows.
+#[cfg(feature = "short")]
+pub use chip_short::*;
+
 /// indicate an field can be hashed in merkle tree (2 Fields to 1 Field)
 pub trait Hashable: FromUniformBytes<64> + Ord {
     /// the spec type used in circuit for this hashable field
@@ -60,25 +87,24 @@ impl MessageHashable for Fr {
 use crate::poseidon::{PermuteChip, PoseidonInstructions};
 use halo2_proofs::{
     circuit::{Chip, Layouter, Region, Value},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector, TableColumn},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector, TableColumn},
     poly::Rotation,
 };
 
 /// The config for poseidon hash circuit
 #[derive(Clone, Debug)]
-pub struct PoseidonHashConfig<Fp: PrimeField, PC: PermuteChip<Fp>> {
+pub struct SpongeConfig<Fp: PrimeField, PC: PermuteChip<Fp>> {
     permute_config: PC::Config,
     hash_table: [Column<Advice>; 5],
     hash_table_aux: [Column<Advice>; 6],
     control_aux: Column<Advice>,
     s_sponge_continue: Column<Advice>,
-    constants: [Column<Fixed>; 1],
     control_step_range: TableColumn,
     s_table: Selector,
     s_custom: Selector,
 }
 
-impl<Fp: Hashable, PC: PermuteChip<Fp>> PoseidonHashConfig<Fp, PC> {
+impl<Fp: Hashable, PC: PermuteChip<Fp>> SpongeConfig<Fp, PC> {
     /// obtain the commitment index of hash table
     pub fn commitment_index(&self) -> [usize; 5] {
         self.hash_table.map(|col| col.index())
@@ -95,8 +121,6 @@ impl<Fp: Hashable, PC: PermuteChip<Fp>> PoseidonHashConfig<Fp, PC> {
         hash_table: [Column<Advice>; 5],
         step: usize,
     ) -> Self {
-        // TODO: remove this "constants".
-        let constants = [0; 1].map(|_| meta.fixed_column());
         let s_table = meta.selector();
         let s_custom = meta.selector();
 
@@ -238,7 +262,6 @@ impl<Fp: Hashable, PC: PermuteChip<Fp>> PoseidonHashConfig<Fp, PC> {
             hash_table,
             hash_table_aux,
             control_aux,
-            constants,
             control_step_range,
             s_table,
             s_custom,
@@ -324,12 +347,12 @@ impl<Fp: Hashable> PoseidonHashTable<Fp> {
 
 /// Represent the chip for Poseidon hash table
 #[derive(Debug)]
-pub struct PoseidonHashChip<'d, Fp: PrimeField, const STEP: usize, PC: PermuteChip<Fp>> {
+pub struct SpongeChip<'d, Fp: PrimeField, const STEP: usize, PC: PermuteChip<Fp>> {
     calcs: usize,
     nil_msg_hash: Option<Fp>,
     mpt_only: bool,
     data: &'d PoseidonHashTable<Fp>,
-    config: PoseidonHashConfig<Fp, PC>,
+    config: SpongeConfig<Fp, PC>,
 }
 
 type PermutedState<Word> = Vec<[Word; 3]>;
@@ -339,11 +362,11 @@ impl<
         Fp: Hashable,
         const STEP: usize,
         PC: PermuteChip<Fp> + PoseidonInstructions<Fp, Fp::SpecType, 3, 2>,
-    > PoseidonHashChip<'d, Fp, STEP, PC>
+    > SpongeChip<'d, Fp, STEP, PC>
 {
     ///construct the chip
     pub fn construct(
-        config: PoseidonHashConfig<Fp, PC>,
+        config: SpongeConfig<Fp, PC>,
         data: &'d PoseidonHashTable<Fp>,
         calcs: usize,
         mpt_only: bool,
@@ -635,9 +658,9 @@ impl<
 }
 
 impl<Fp: PrimeField, const STEP: usize, PC: PermuteChip<Fp>> Chip<Fp>
-    for PoseidonHashChip<'_, Fp, STEP, PC>
+    for SpongeChip<'_, Fp, STEP, PC>
 {
-    type Config = PoseidonHashConfig<Fp, PC>;
+    type Config = SpongeConfig<Fp, PC>;
     type Loaded = PoseidonHashTable<Fp>;
 
     fn config(&self) -> &Self::Config {
@@ -652,8 +675,7 @@ impl<Fp: PrimeField, const STEP: usize, PC: PermuteChip<Fp>> Chip<Fp>
 mod tests {
     use std::marker::PhantomData;
 
-    use crate::poseidon::Pow5Chip;
-    use crate::septidon::SeptidonChip;
+    use crate::poseidon::{Pow5Chip, SeptidonChip};
 
     use super::*;
     use halo2_proofs::ff::Field;
@@ -726,7 +748,7 @@ mod tests {
     impl<PC: PermuteChip<Fr> + PoseidonInstructions<Fr, <Fr as Hashable>::SpecType, 3, 2>>
         Circuit<Fr> for TestCircuit<PC>
     {
-        type Config = (PoseidonHashConfig<Fr, PC>, usize);
+        type Config = (SpongeConfig<Fr, PC>, usize);
         type FloorPlanner = SimpleFloorPlanner;
 
         fn without_witnesses(&self) -> Self {
@@ -735,10 +757,7 @@ mod tests {
 
         fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
             let hash_tbl = [0; 5].map(|_| meta.advice_column());
-            (
-                PoseidonHashConfig::configure_sub(meta, hash_tbl, TEST_STEP),
-                4,
-            )
+            (SpongeConfig::configure_sub(meta, hash_tbl, TEST_STEP), 4)
         }
 
         fn synthesize(
@@ -746,7 +765,7 @@ mod tests {
             (config, max_rows): Self::Config,
             mut layouter: impl Layouter<Fr>,
         ) -> Result<(), Error> {
-            let chip = PoseidonHashChip::<Fr, TEST_STEP, PC>::construct(
+            let chip = SpongeChip::<Fr, TEST_STEP, PC>::construct(
                 config,
                 &self.table,
                 max_rows,
