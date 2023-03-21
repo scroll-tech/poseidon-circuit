@@ -8,9 +8,11 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
+use crate::Hashable;
+
 use super::{
     primitives::{Absorbing, Domain, Mds, Spec, Squeezing, State},
-    PaddedWord, PoseidonInstructions, PoseidonSpongeInstructions,
+    PaddedWord, PermuteChip, PoseidonInstructions, PoseidonSpongeInstructions,
 };
 
 /// Trait for a variable in the circuit.
@@ -56,7 +58,7 @@ pub struct Pow5Config<F: FieldExt, const WIDTH: usize, const RATE: usize> {
 ///
 /// The chip is implemented using a single round per row for full rounds, and two rounds
 /// per row for partial rounds.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Pow5Chip<F: FieldExt, const WIDTH: usize, const RATE: usize> {
     config: Pow5Config<F, WIDTH, RATE>,
 }
@@ -258,6 +260,26 @@ impl<F: FieldExt, const WIDTH: usize, const RATE: usize> Chip<F> for Pow5Chip<F,
     }
 }
 
+impl<F: Hashable> PermuteChip<F> for Pow5Chip<F, 3, 2> {
+    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+        let state = [0; 3].map(|_| meta.advice_column());
+        let partial_sbox = meta.advice_column();
+        let constants = [0; 6].map(|_| meta.fixed_column());
+
+        Pow5Chip::configure::<F::SpecType>(
+            meta,
+            state,
+            partial_sbox,
+            constants[..3].try_into().unwrap(), //rc_a
+            constants[3..].try_into().unwrap(), //rc_b
+        )
+    }
+
+    fn construct(config: Self::Config) -> Self {
+        Self::construct(config)
+    }
+}
+
 impl<F: FieldExt, S: Spec<F, WIDTH, RATE>, const WIDTH: usize, const RATE: usize>
     PoseidonInstructions<F, S, WIDTH, RATE> for Pow5Chip<F, WIDTH, RATE>
 {
@@ -455,7 +477,7 @@ impl<
 
 /// A word in the Poseidon state.
 #[derive(Clone, Debug)]
-pub struct StateWord<F: FieldExt>(AssignedCell<F, F>);
+pub struct StateWord<F: FieldExt>(pub AssignedCell<F, F>);
 
 impl<F: FieldExt> From<StateWord<F>> for AssignedCell<F, F> {
     fn from(state_word: StateWord<F>) -> AssignedCell<F, F> {

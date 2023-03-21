@@ -8,6 +8,8 @@
 
 pub mod hash;
 pub mod poseidon;
+pub mod septidon;
+
 pub use halo2_proofs::halo2curves::bn256::Fr as Bn256Fr;
 pub use hash::Hashable;
 

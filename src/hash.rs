@@ -3,8 +3,8 @@
 use crate::poseidon::primitives::{
     ConstantLengthIden3, Domain, Hash, P128Pow5T3, Spec, VariableLengthIden3,
 };
-use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::halo2curves::bn256::Fr;
+use halo2_proofs::{arithmetic::FieldExt, circuit::AssignedCell};
 
 /// indicate an field can be hashed in merkle tree (2 Fields to 1 Field)
 pub trait Hashable: FieldExt {
@@ -56,7 +56,7 @@ impl MessageHashable for Fr {
     }
 }
 
-use crate::poseidon::{PoseidonInstructions, Pow5Chip, Pow5Config, StateWord, Var};
+use crate::poseidon::{PermuteChip, PoseidonInstructions};
 use halo2_proofs::{
     circuit::{Chip, Layouter, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector, TableColumn},
@@ -65,19 +65,19 @@ use halo2_proofs::{
 
 /// The config for poseidon hash circuit
 #[derive(Clone, Debug)]
-pub struct PoseidonHashConfig<Fp: FieldExt> {
-    permute_config: Pow5Config<Fp, 3, 2>,
+pub struct PoseidonHashConfig<Fp: FieldExt, PC: PermuteChip<Fp>> {
+    permute_config: PC::Config,
     hash_table: [Column<Advice>; 5],
     hash_table_aux: [Column<Advice>; 6],
     control_aux: Column<Advice>,
     s_sponge_continue: Column<Advice>,
-    constants: [Column<Fixed>; 6],
+    constants: [Column<Fixed>; 1],
     control_step_range: TableColumn,
     s_table: Selector,
     s_custom: Selector,
 }
 
-impl<Fp: Hashable> PoseidonHashConfig<Fp> {
+impl<Fp: Hashable, PC: PermuteChip<Fp>> PoseidonHashConfig<Fp, PC> {
     /// obtain the commitment index of hash table
     pub fn commitment_index(&self) -> [usize; 5] {
         self.hash_table.map(|col| col.index())
@@ -94,9 +94,8 @@ impl<Fp: Hashable> PoseidonHashConfig<Fp> {
         hash_table: [Column<Advice>; 5],
         step: usize,
     ) -> Self {
-        let state = [0; 3].map(|_| meta.advice_column());
-        let partial_sbox = meta.advice_column();
-        let constants = [0; 6].map(|_| meta.fixed_column());
+        // TODO: remove this "constants".
+        let constants = [0; 1].map(|_| meta.fixed_column());
         let s_table = meta.selector();
         let s_custom = meta.selector();
 
@@ -236,13 +235,7 @@ impl<Fp: Hashable> PoseidonHashConfig<Fp> {
         });
 
         Self {
-            permute_config: Pow5Chip::configure::<Fp::SpecType>(
-                meta,
-                state,
-                partial_sbox,
-                constants[..3].try_into().unwrap(), //rc_a
-                constants[3..].try_into().unwrap(), //rc_b
-            ),
+            permute_config: PC::configure(meta),
             hash_table,
             hash_table_aux,
             control_aux,
@@ -332,20 +325,26 @@ impl<Fp: Hashable> PoseidonHashTable<Fp> {
 
 /// Represent the chip for Poseidon hash table
 #[derive(Debug)]
-pub struct PoseidonHashChip<'d, Fp: FieldExt, const STEP: usize> {
+pub struct PoseidonHashChip<'d, Fp: FieldExt, const STEP: usize, PC: PermuteChip<Fp>> {
     calcs: usize,
     nil_msg_hash: Option<Fp>,
     mpt_only: bool,
     data: &'d PoseidonHashTable<Fp>,
-    config: PoseidonHashConfig<Fp>,
+    config: PoseidonHashConfig<Fp, PC>,
 }
 
-type PermutedState<Fp> = Vec<[StateWord<Fp>; 3]>;
+type PermutedState<Word> = Vec<[Word; 3]>;
 
-impl<'d, Fp: Hashable, const STEP: usize> PoseidonHashChip<'d, Fp, STEP> {
+impl<
+        'd,
+        Fp: Hashable,
+        const STEP: usize,
+        PC: PermuteChip<Fp> + PoseidonInstructions<Fp, Fp::SpecType, 3, 2>,
+    > PoseidonHashChip<'d, Fp, STEP, PC>
+{
     ///construct the chip
     pub fn construct(
-        config: PoseidonHashConfig<Fp>,
+        config: PoseidonHashConfig<Fp, PC>,
         data: &'d PoseidonHashTable<Fp>,
         calcs: usize,
         mpt_only: bool,
@@ -426,7 +425,7 @@ impl<'d, Fp: Hashable, const STEP: usize> PoseidonHashChip<'d, Fp, STEP> {
         &self,
         region: &mut Region<'_, Fp>,
         begin_offset: usize,
-    ) -> Result<(PermutedState<Fp>, PermutedState<Fp>), Error> {
+    ) -> Result<(PermutedState<PC::Word>, PermutedState<PC::Word>), Error> {
         let config = &self.config;
         let data = self.data;
 
@@ -569,9 +568,9 @@ impl<'d, Fp: Hashable, const STEP: usize> PoseidonHashChip<'d, Fp, STEP> {
 
             //we directly specify the init state of permutation
             let c_start_arr: [_; 3] = c_start.try_into().expect("same size");
-            states_in.push(c_start_arr.map(StateWord::from));
+            states_in.push(c_start_arr.map(PC::Word::from));
             let c_end_arr: [_; 3] = c_end.try_into().expect("same size");
-            states_out.push(c_end_arr.map(StateWord::from));
+            states_out.push(c_end_arr.map(PC::Word::from));
         }
 
         // set the last row is "custom", a row both enabled and customed
@@ -610,12 +609,11 @@ impl<'d, Fp: Hashable, const STEP: usize> PoseidonHashChip<'d, Fp, STEP> {
 
         let mut chip_finals = Vec::new();
         for state in states_in {
-            let chip = Pow5Chip::construct(config.permute_config.clone());
+            let chip = PC::construct(config.permute_config.clone());
 
-            let final_state =
-                <Pow5Chip<_, 3, 2> as PoseidonInstructions<Fp, Fp::SpecType, 3, 2>>::permute(
-                    &chip, layouter, &state,
-                )?;
+            let final_state = <PC as PoseidonInstructions<Fp, Fp::SpecType, 3, 2>>::permute(
+                &chip, layouter, &state,
+            )?;
 
             chip_finals.push(final_state);
         }
@@ -625,6 +623,8 @@ impl<'d, Fp: Hashable, const STEP: usize> PoseidonHashChip<'d, Fp, STEP> {
             |mut region| {
                 for (state, final_state) in states_out.iter().zip(chip_finals.iter()) {
                     for (s_cell, final_cell) in state.iter().zip(final_state.iter()) {
+                        let s_cell: AssignedCell<Fp, Fp> = s_cell.clone().into();
+                        let final_cell: AssignedCell<Fp, Fp> = final_cell.clone().into();
                         region.constrain_equal(s_cell.cell(), final_cell.cell())?;
                     }
                 }
@@ -635,8 +635,10 @@ impl<'d, Fp: Hashable, const STEP: usize> PoseidonHashChip<'d, Fp, STEP> {
     }
 }
 
-impl<Fp: FieldExt, const STEP: usize> Chip<Fp> for PoseidonHashChip<'_, Fp, STEP> {
-    type Config = PoseidonHashConfig<Fp>;
+impl<Fp: FieldExt, const STEP: usize, PC: PermuteChip<Fp>> Chip<Fp>
+    for PoseidonHashChip<'_, Fp, STEP, PC>
+{
+    type Config = PoseidonHashConfig<Fp, PC>;
     type Loaded = PoseidonHashTable<Fp>;
 
     fn config(&self) -> &Self::Config {
@@ -649,6 +651,11 @@ impl<Fp: FieldExt, const STEP: usize> Chip<Fp> for PoseidonHashChip<'_, Fp, STEP
 
 #[cfg(test)]
 mod tests {
+    use std::marker::PhantomData;
+
+    use crate::poseidon::Pow5Chip;
+    use crate::septidon::SeptidonChip;
+
     use super::*;
     use halo2_proofs::halo2curves::group::ff::PrimeField;
     use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
@@ -701,19 +708,33 @@ mod tests {
     const TEST_STEP: usize = 32;
 
     // test circuit derived from table data
-    impl<Fp: Hashable> Circuit<Fp> for PoseidonHashTable<Fp> {
-        type Config = (PoseidonHashConfig<Fp>, usize);
+    //#[derive(Clone, Default, Debug)]
+    struct TestCircuit<PC: PermuteChip<Fr>> {
+        table: PoseidonHashTable<Fr>,
+        _phantom: PhantomData<PC>,
+    }
+
+    impl<PC: PermuteChip<Fr>> TestCircuit<PC> {
+        pub fn new(table: PoseidonHashTable<Fr>) -> Self {
+            TestCircuit {
+                table,
+                _phantom: PhantomData,
+            }
+        }
+    }
+
+    impl<PC: PermuteChip<Fr> + PoseidonInstructions<Fr, <Fr as Hashable>::SpecType, 3, 2>>
+        Circuit<Fr> for TestCircuit<PC>
+    {
+        type Config = (PoseidonHashConfig<Fr, PC>, usize);
         type FloorPlanner = SimpleFloorPlanner;
 
         fn without_witnesses(&self) -> Self {
-            Self {
-                ..Default::default()
-            }
+            Self::new(Default::default())
         }
 
-        fn configure(meta: &mut ConstraintSystem<Fp>) -> Self::Config {
+        fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
             let hash_tbl = [0; 5].map(|_| meta.advice_column());
-
             (
                 PoseidonHashConfig::configure_sub(meta, hash_tbl, TEST_STEP),
                 4,
@@ -723,14 +744,14 @@ mod tests {
         fn synthesize(
             &self,
             (config, max_rows): Self::Config,
-            mut layouter: impl Layouter<Fp>,
+            mut layouter: impl Layouter<Fr>,
         ) -> Result<(), Error> {
-            let chip = PoseidonHashChip::<Fp, TEST_STEP>::construct(
+            let chip = PoseidonHashChip::<Fr, TEST_STEP, PC>::construct(
                 config,
-                &self,
+                &self.table,
                 max_rows,
                 false,
-                Some(Fp::from(42u64)),
+                Some(Fr::from(42u64)),
             );
             chip.load(&mut layouter)
         }
@@ -770,6 +791,13 @@ mod tests {
 
     #[test]
     fn poseidon_hash_circuit() {
+        poseidon_hash_circuit_impl::<Pow5Chip<Fr, 3, 2>>();
+        poseidon_hash_circuit_impl::<SeptidonChip>();
+    }
+
+    fn poseidon_hash_circuit_impl<
+        PC: PermuteChip<Fr> + PoseidonInstructions<Fr, <Fr as Hashable>::SpecType, 3, 2>,
+    >() {
         let message1 = [
             Fr::from_str_vartime("1").unwrap(),
             Fr::from_str_vartime("2").unwrap(),
@@ -781,16 +809,23 @@ mod tests {
         ];
 
         let k = 8;
-        let circuit = PoseidonHashTable {
+        let circuit = TestCircuit::<PC>::new(PoseidonHashTable {
             inputs: vec![message1, message2],
             ..Default::default()
-        };
+        });
         let prover = MockProver::run(k, &circuit, vec![]).unwrap();
         assert_eq!(prover.verify(), Ok(()));
     }
 
     #[test]
     fn poseidon_var_len_hash_circuit() {
+        poseidon_var_len_hash_circuit_impl::<Pow5Chip<Fr, 3, 2>>();
+        poseidon_var_len_hash_circuit_impl::<SeptidonChip>();
+    }
+
+    fn poseidon_var_len_hash_circuit_impl<
+        PC: PermuteChip<Fr> + PoseidonInstructions<Fr, <Fr as Hashable>::SpecType, 3, 2>,
+    >() {
         let message1 = [
             Fr::from_str_vartime("1").unwrap(),
             Fr::from_str_vartime("2").unwrap(),
@@ -799,35 +834,34 @@ mod tests {
         let message2 = [Fr::from_str_vartime("50331648").unwrap(), Fr::zero()];
 
         let k = 8;
-        let circuit = PoseidonHashTable {
+        let circuit = TestCircuit::<PC>::new( PoseidonHashTable {
             inputs: vec![message1, message2],
             controls: vec![Fr::from_u128(45), Fr::from_u128(13)],
             checks: vec![None, Some(Fr::from_str_vartime("15002881182751877599173281392790087382867290792048832034781070831698029191486").unwrap())],
             ..Default::default()
-        };
+        });
         let prover = MockProver::run(k, &circuit, vec![]).unwrap();
         assert_eq!(prover.verify(), Ok(()));
 
-        let circuit = PoseidonHashTable {
+        let circuit = TestCircuit::<PC>::new(PoseidonHashTable {
             inputs: vec![message1, message2, message1],
             controls: vec![Fr::from_u128(64), Fr::from_u128(32), Fr::zero()],
             checks: Vec::new(),
             ..Default::default()
-        };
+        });
         let prover = MockProver::run(k, &circuit, vec![]).unwrap();
         assert_eq!(prover.verify(), Ok(()));
 
-        let circuit = PoseidonHashTable::<Fr> {
+        let circuit = TestCircuit::<PC>::new(PoseidonHashTable::<Fr> {
             inputs: vec![message2],
             controls: vec![Fr::from_u128(13)],
             ..Default::default()
-        };
+        });
         let prover = MockProver::run(k, &circuit, vec![]).unwrap();
         assert_eq!(prover.verify(), Ok(()));
-
-        let circuit = PoseidonHashTable::<Fr> {
+        let circuit = TestCircuit::<PC>::new(PoseidonHashTable::<Fr> {
             ..Default::default()
-        };
+        });
         let prover = MockProver::run(k, &circuit, vec![]).unwrap();
         assert_eq!(prover.verify(), Ok(()));
     }

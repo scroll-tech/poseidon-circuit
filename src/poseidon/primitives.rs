@@ -24,7 +24,7 @@ pub(crate) mod pasta;
 //pub(crate) mod test_vectors;
 
 mod p128pow5t3;
-mod p128pow5t3_compact;
+pub(crate) mod p128pow5t3_compact;
 
 pub use p128pow5t3::P128Pow5T3;
 pub use p128pow5t3_compact::P128Pow5T3CompactSpec as P128Pow5T3Compact;
