@@ -1,5 +1,5 @@
+use super::params::GATE_DEGREE_5;
 use super::util::query;
-use crate::septidon::params::GATE_DEGREE_5;
 use halo2_proofs::circuit::{Region, Value};
 use halo2_proofs::halo2curves::bn256::Fr as F;
 use halo2_proofs::plonk::{Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells};

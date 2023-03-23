@@ -1,9 +1,7 @@
 use super::loop_chip::LoopBody;
 use super::params::mds;
 use super::state::{Cell, FullState, SBox};
-use super::util::matmul;
-use super::util::query;
-use crate::septidon::util::{join_values, split_values};
+use super::util::{join_values, matmul, query, split_values};
 use halo2_proofs::circuit::{Region, Value};
 use halo2_proofs::halo2curves::bn256::Fr as F;
 use halo2_proofs::plonk::{ConstraintSystem, Error, Expression, VirtualCells};
