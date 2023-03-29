@@ -147,8 +147,9 @@ impl<Fp: Hashable, PC: PermuteChip<Fp, Fp::SpecType, 3, 2>> SpongeConfig<Fp, PC>
         hash_table: [Column<Advice>; 5],
         step: usize,
     ) -> Self {
-        let s_table = meta.selector();
-        let s_custom = meta.selector();
+
+        let s_table = meta.complex_selector();
+        let s_custom = meta.complex_selector();
 
         let hash_table_aux = [0, 1, 2, 3, 4, 5].map(|idx| {
             if idx < 5 {
