@@ -1,16 +1,16 @@
 use super::loop_chip::LoopBody;
-use super::params::mds;
+use super::params::{mds, CachedConstants};
 use super::state::{Cell, FullState, SBox};
 use super::util::{join_values, matmul, query, split_values};
 use halo2_proofs::circuit::{Region, Value};
-use halo2_proofs::halo2curves::bn256::Fr as F;
+//use halo2_proofs::halo2curves::bn256::Fr as F;
 use halo2_proofs::plonk::{ConstraintSystem, Error, Expression, VirtualCells};
 
 #[derive(Clone, Debug)]
 pub struct FullRoundChip(pub FullState);
 
 impl FullRoundChip {
-    pub fn configure(cs: &mut ConstraintSystem<F>) -> (Self, LoopBody) {
+    pub fn configure<F: CachedConstants>(cs: &mut ConstraintSystem<F>) -> (Self, LoopBody<F>) {
         let chip = Self(FullState::configure(cs));
 
         let loop_body = query(cs, |meta| {
@@ -22,7 +22,7 @@ impl FullRoundChip {
         (chip, loop_body)
     }
 
-    fn full_round_expr(&self, meta: &mut VirtualCells<'_, F>) -> [Expression<F>; 3] {
+    fn full_round_expr<F: CachedConstants>(&self, meta: &mut VirtualCells<'_, F>) -> [Expression<F>; 3] {
         let sbox_out = self.0.map(|sbox: &SBox| sbox.output_expr(meta));
         matmul::expr(&mds(), sbox_out)
     }
@@ -32,7 +32,7 @@ impl FullRoundChip {
     }
 
     /// Assign the witness.
-    pub fn assign(
+    pub fn assign<F: CachedConstants>(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,

@@ -1,9 +1,9 @@
 use super::params;
-use super::params::{mds, round_constant};
+use super::params::{mds, round_constant, CachedConstants};
 use super::state::Cell;
 use super::util::{join_values, matmul, split_values};
 use halo2_proofs::circuit::{Region, Value};
-use halo2_proofs::halo2curves::bn256::Fr as F;
+//use halo2_proofs::halo2curves::bn256::Fr as F;
 use halo2_proofs::plonk::{Advice, Column, ConstraintSystem, Constraints, Error, Expression};
 
 #[derive(Clone, Debug)]
@@ -12,7 +12,7 @@ pub struct TransitionRoundChip {
 }
 
 impl TransitionRoundChip {
-    pub fn configure(
+    pub fn configure<F: CachedConstants>(
         cs: &mut ConstraintSystem<F>,
         signal: Expression<F>,
         next_state: [Cell; 3],
@@ -53,7 +53,7 @@ impl TransitionRoundChip {
 
     // Return an expression of the state after the first partial round given the state before.
     // TODO: implement with with degree <= 5 using the helper cell.
-    fn first_partial_round_expr(input: &[Expression<F>; 3]) -> [Expression<F>; 3] {
+    fn first_partial_round_expr<F: CachedConstants>(input: &[Expression<F>; 3]) -> [Expression<F>; 3] {
         let rc = Expression::Constant(Self::round_constant());
         let sbox_out = [
             params::sbox::expr(input[0].clone(), rc),
@@ -63,7 +63,7 @@ impl TransitionRoundChip {
         matmul::expr(&mds(), sbox_out)
     }
 
-    fn round_constant() -> F {
+    fn round_constant<F: CachedConstants>() -> F {
         round_constant(4)[0]
     }
 
@@ -83,7 +83,7 @@ impl TransitionRoundChip {
     }
 
     /// Assign the state of the first partial round, and return the round output.
-    pub fn assign_first_partial_state(
+    pub fn assign_first_partial_state<F: CachedConstants>(
         &self,
         region: &mut Region<'_, F>,
         middle_break_offset: usize,
@@ -98,7 +98,7 @@ impl TransitionRoundChip {
         Ok(output)
     }
 
-    fn first_partial_round(input: &[Value<F>; 3]) -> [Value<F>; 3] {
+    fn first_partial_round<F: CachedConstants>(input: &[Value<F>; 3]) -> [Value<F>; 3] {
         let sbox_out = [
             input[0].map(|f| params::sbox::value(f, Self::round_constant())),
             input[1],
@@ -109,7 +109,7 @@ impl TransitionRoundChip {
     }
 
     /// Assign the final state. This has the same layout as the first partial state, at another offset.
-    pub fn assign_final_state(
+    pub fn assign_final_state<F: CachedConstants>(
         &self,
         region: &mut Region<'_, F>,
         final_break_offset: usize,

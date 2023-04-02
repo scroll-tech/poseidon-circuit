@@ -1,9 +1,9 @@
 use super::loop_chip::LoopBody;
-use super::params::mds;
+use super::params::{mds, CachedConstants};
 use super::state::{Cell, SBox};
 use super::util::{join_values, matmul, query, split_values};
 use halo2_proofs::circuit::{Region, Value};
-use halo2_proofs::halo2curves::bn256::Fr as F;
+//use halo2_proofs::halo2curves::bn256::Fr as F;
 use halo2_proofs::plonk::{ConstraintSystem, Constraints, Error, Expression, VirtualCells};
 
 #[derive(Clone, Debug)]
@@ -14,7 +14,7 @@ pub struct SeptupleRoundChip {
 }
 
 impl SeptupleRoundChip {
-    pub fn configure(cs: &mut ConstraintSystem<F>, q: Expression<F>) -> (Self, LoopBody) {
+    pub fn configure<F: CachedConstants>(cs: &mut ConstraintSystem<F>, q: Expression<F>) -> (Self, LoopBody<F>) {
         let chip = Self {
             first_sbox: SBox::configure(cs),
             first_linears: [Cell::configure(cs), Cell::configure(cs)],
@@ -73,7 +73,7 @@ impl SeptupleRoundChip {
         (chip, loop_body)
     }
 
-    fn partial_round_expr(
+    fn partial_round_expr<F: CachedConstants>(
         meta: &mut VirtualCells<'_, F>,
         sbox: &SBox,
         input: &[Expression<F>; 3],
@@ -91,7 +91,7 @@ impl SeptupleRoundChip {
     }
 
     /// Assign the witness.
-    pub fn assign(
+    pub fn assign<F: CachedConstants>(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,

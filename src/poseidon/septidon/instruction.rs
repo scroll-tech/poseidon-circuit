@@ -2,16 +2,17 @@ use super::super::{
     primitives::{Spec, State},
     PermuteChip, PoseidonInstructions, StateWord, Var,
 };
-use super::{params::F, util::map_array, SeptidonChip};
+use super::{params::CachedConstants, util::map_array, SeptidonChip};
 use halo2_proofs::{
     circuit::{Chip, Layouter},
     plonk::{ConstraintSystem, Error},
 };
+use halo2_proofs::arithmetic::FieldExt;
 
 const WIDTH: usize = 3;
 const RATE: usize = 2;
 
-impl PermuteChip<F> for SeptidonChip {
+impl<F: CachedConstants, S: Spec<F, WIDTH, RATE>> PermuteChip<F, S, WIDTH, RATE> for SeptidonChip {
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         let chip = Self::configure(meta);
 
@@ -31,7 +32,7 @@ impl PermuteChip<F> for SeptidonChip {
     }
 }
 
-impl<S: Spec<F, WIDTH, RATE>> PoseidonInstructions<F, S, WIDTH, RATE> for SeptidonChip {
+impl<F: CachedConstants, S: Spec<F, WIDTH, RATE>> PoseidonInstructions<F, S, WIDTH, RATE> for SeptidonChip {
     type Word = StateWord<F>;
 
     fn permute(
@@ -80,7 +81,7 @@ impl<S: Spec<F, WIDTH, RATE>> PoseidonInstructions<F, S, WIDTH, RATE> for Septid
     }
 }
 
-impl Chip<F> for SeptidonChip {
+impl<F: FieldExt> Chip<F> for SeptidonChip {
     type Config = Self;
 
     type Loaded = ();

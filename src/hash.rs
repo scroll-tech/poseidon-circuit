@@ -25,9 +25,11 @@ mod chip_long {
 mod chip_short {
     use super::{SpongeChip, SpongeConfig};
     use crate::poseidon::primitives::P128Pow5T3Compact;
-    use crate::poseidon::SeptidonChip;
+    use crate::poseidon::{CachedConstants, SeptidonChip};
+    /// The specified base hashable trait
+    pub trait Hashablebase : CachedConstants{}
     /// Set the spec type as P128Pow5T3Compact
-    pub type T3SpecImpl<F> = P128Pow5T3Compact<F>;
+    pub type HashSpec<F> = P128Pow5T3Compact<F>;
     /// The configuration of the Poseidon hash chip.
     pub type PoseidonHashConfig<F> = SpongeConfig<F, SeptidonChip>;
     /// The Poseidon hash chip.
@@ -100,10 +102,11 @@ use halo2_proofs::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector, TableColumn},
     poly::Rotation,
 };
+use std::fmt::Debug as DebugT;
 
 /// The config for poseidon hash circuit
 #[derive(Clone, Debug)]
-pub struct SpongeConfig<Fp: FieldExt, PC: Chip<Fp>> {
+pub struct SpongeConfig<Fp: FieldExt, PC: Chip<Fp> + Clone + DebugT> {
     permute_config: PC::Config,
     hash_table: [Column<Advice>; 5],
     hash_table_aux: [Column<Advice>; 6],
@@ -359,7 +362,7 @@ impl<Fp: Hashable> PoseidonHashTable<Fp> {
 
 /// Represent the chip for Poseidon hash table
 #[derive(Debug)]
-pub struct SpongeChip<'d, Fp: Hashable, const STEP: usize, PC: PermuteChip<Fp, Fp::SpecType, 3, 2>> {
+pub struct SpongeChip<'d, Fp: FieldExt, const STEP: usize, PC: Chip<Fp> + Clone + DebugT> {
     calcs: usize,
     nil_msg_hash: Option<Fp>,
     mpt_only: bool,
@@ -669,7 +672,7 @@ impl<
     }
 }
 
-impl<Fp: FieldExt, const STEP: usize, PC: Chip<Fp>> Chip<Fp>
+impl<Fp: FieldExt, const STEP: usize, PC: Chip<Fp> + Clone + DebugT> Chip<Fp>
     for SpongeChip<'_, Fp, STEP, PC>
 {
     type Config = SpongeConfig<Fp, PC>;
