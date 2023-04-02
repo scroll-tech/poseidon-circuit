@@ -1,24 +1,33 @@
 //! The hash circuit base on poseidon.
 
 use crate::poseidon::primitives::{
-    ConstantLengthIden3, Domain, Hash, P128Pow5T3, Spec, VariableLengthIden3,
+    ConstantLengthIden3, Domain, Hash, Spec, VariableLengthIden3,
 };
 use halo2_proofs::halo2curves::bn256::Fr;
 use halo2_proofs::{arithmetic::FieldExt, circuit::AssignedCell};
 
 mod chip_long {
     use super::{SpongeChip, SpongeConfig};
+    use crate::poseidon::primitives::{P128Pow5T3, P128Pow5T3Constants};
     use crate::poseidon::Pow5Chip;
+    /// The specified base hashable trait
+    pub trait Hashablebase : P128Pow5T3Constants{}
+    /// Set the spec type as P128Pow5T3
+    pub type HashSpec<F> = P128Pow5T3<F>;
     /// The configuration of the Poseidon hash chip.
     pub type PoseidonHashConfig<F> = SpongeConfig<F, Pow5Chip<F, 3, 2>>;
     /// The Poseidon hash chip.
     pub type PoseidonHashChip<'d, F, const STEP: usize> =
         SpongeChip<'d, F, STEP, Pow5Chip<F, 3, 2>>;
+    
 }
 
 mod chip_short {
     use super::{SpongeChip, SpongeConfig};
+    use crate::poseidon::primitives::P128Pow5T3Compact;
     use crate::poseidon::SeptidonChip;
+    /// Set the spec type as P128Pow5T3Compact
+    pub type T3SpecImpl<F> = P128Pow5T3Compact<F>;
     /// The configuration of the Poseidon hash chip.
     pub type PoseidonHashConfig<F> = SpongeConfig<F, SeptidonChip>;
     /// The Poseidon hash chip.
@@ -34,7 +43,7 @@ pub use chip_long::*;
 pub use chip_short::*;
 
 /// indicate an field can be hashed in merkle tree (2 Fields to 1 Field)
-pub trait Hashable: FieldExt {
+pub trait Hashable: Hashablebase {
     /// the spec type used in circuit for this hashable field
     type SpecType: Spec<Self, 3, 2>;
     /// the domain type used for hash calculation
@@ -66,8 +75,10 @@ pub trait MessageHashable: Hashable {
     }
 }
 
+impl Hashablebase for Fr {}
+
 impl Hashable for Fr {
-    type SpecType = P128Pow5T3<Self>;
+    type SpecType = HashSpec<Self>;
     type DomainType = ConstantLengthIden3<2>;
 
     fn hash(inp: [Self; 2]) -> Self {
@@ -92,7 +103,7 @@ use halo2_proofs::{
 
 /// The config for poseidon hash circuit
 #[derive(Clone, Debug)]
-pub struct SpongeConfig<Fp: FieldExt, PC: PermuteChip<Fp>> {
+pub struct SpongeConfig<Fp: FieldExt, PC: Chip<Fp>> {
     permute_config: PC::Config,
     hash_table: [Column<Advice>; 5],
     hash_table_aux: [Column<Advice>; 6],
@@ -103,7 +114,7 @@ pub struct SpongeConfig<Fp: FieldExt, PC: PermuteChip<Fp>> {
     s_custom: Selector,
 }
 
-impl<Fp: Hashable, PC: PermuteChip<Fp>> SpongeConfig<Fp, PC> {
+impl<Fp: Hashable, PC: PermuteChip<Fp, Fp::SpecType, 3, 2>> SpongeConfig<Fp, PC> {
     /// obtain the commitment index of hash table
     pub fn commitment_index(&self) -> [usize; 5] {
         self.hash_table.map(|col| col.index())
@@ -348,7 +359,7 @@ impl<Fp: Hashable> PoseidonHashTable<Fp> {
 
 /// Represent the chip for Poseidon hash table
 #[derive(Debug)]
-pub struct SpongeChip<'d, Fp: FieldExt, const STEP: usize, PC: PermuteChip<Fp>> {
+pub struct SpongeChip<'d, Fp: Hashable, const STEP: usize, PC: PermuteChip<Fp, Fp::SpecType, 3, 2>> {
     calcs: usize,
     nil_msg_hash: Option<Fp>,
     mpt_only: bool,
@@ -362,7 +373,7 @@ impl<
         'd,
         Fp: Hashable,
         const STEP: usize,
-        PC: PermuteChip<Fp> + PoseidonInstructions<Fp, Fp::SpecType, 3, 2>,
+        PC: PermuteChip<Fp, Fp::SpecType, 3, 2>,
     > SpongeChip<'d, Fp, STEP, PC>
 {
     ///construct the chip
@@ -658,7 +669,7 @@ impl<
     }
 }
 
-impl<Fp: FieldExt, const STEP: usize, PC: PermuteChip<Fp>> Chip<Fp>
+impl<Fp: FieldExt, const STEP: usize, PC: Chip<Fp>> Chip<Fp>
     for SpongeChip<'_, Fp, STEP, PC>
 {
     type Config = SpongeConfig<Fp, PC>;

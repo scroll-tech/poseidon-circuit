@@ -30,7 +30,8 @@ pub enum PaddedWord<F: Field> {
 }
 
 /// This trait is the interface to chips that implement a permutation.
-pub trait PermuteChip<F: FieldExt>: Chip<F> + Clone + DebugT {
+pub trait PermuteChip<F: FieldExt, S: Spec<F, T, RATE>, const T: usize, const RATE: usize>: 
+    Chip<F> + Clone + DebugT + PoseidonInstructions<F, S, T, RATE>{
     /// Configure the permutation chip.
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config;
 
