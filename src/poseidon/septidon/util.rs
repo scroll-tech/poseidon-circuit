@@ -120,7 +120,7 @@ pub mod or {
     pub fn expr<F: FieldExt>(a: Expression<F>, b: Expression<F>) -> Expression<F> {
         let one = Expression::Constant(F::from(1));
         // a OR b <=> !(!a AND !b)
-        one.clone() - ((one.clone() - a) * (one.clone() - b))
+        one.clone() - ((one.clone() - a) * (one - b))
     }
 
     /// Return (a OR b), assuming a and b are boolean values.

@@ -24,7 +24,7 @@ impl FullRoundChip {
 
     fn full_round_expr<F: CachedConstants>(&self, meta: &mut VirtualCells<'_, F>) -> [Expression<F>; 3] {
         let sbox_out = self.0.map(|sbox: &SBox| sbox.output_expr(meta));
-        matmul::expr(&mds(), sbox_out)
+        matmul::expr(mds(), sbox_out)
     }
 
     pub fn input_cells(&self) -> [Cell; 3] {
@@ -44,7 +44,7 @@ impl FullRoundChip {
             let sbox: &SBox = &self.0 .0[i];
             sbox_out[i] = sbox.assign(region, offset, round_constants[i], input[i])?;
         }
-        let output = join_values(sbox_out).map(|sbox_out| matmul::value(&mds(), sbox_out));
+        let output = join_values(sbox_out).map(|sbox_out| matmul::value(mds(), sbox_out));
         Ok(split_values(output))
     }
 }

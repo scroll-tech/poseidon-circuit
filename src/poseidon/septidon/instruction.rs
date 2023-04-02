@@ -49,7 +49,7 @@ impl<F: CachedConstants, S: Spec<F, WIDTH, RATE>> PoseidonInstructions<F, S, WID
                 let chip_input = self.initial_state_cells();
                 for i in 0..WIDTH {
                     initial_state[i].0.copy_advice(
-                        || format!("load state_{}", i),
+                        || format!("load state_{i}"),
                         region,
                         chip_input[i].column,
                         chip_input[i].offset as usize,
@@ -57,7 +57,7 @@ impl<F: CachedConstants, S: Spec<F, WIDTH, RATE>> PoseidonInstructions<F, S, WID
                 }
 
                 // Assign the internal witness of the permutation.
-                let initial_values = map_array(&initial_state, |word| word.value());
+                let initial_values = map_array(initial_state, |word| word.value());
                 let final_values = self.assign_permutation(region, initial_values)?;
 
                 // Return the cells containing the final state.

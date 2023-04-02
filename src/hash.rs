@@ -371,6 +371,7 @@ pub struct SpongeChip<'d, Fp: FieldExt, const STEP: usize, PC: Chip<Fp> + Clone 
 }
 
 type PermutedState<Word> = Vec<[Word; 3]>;
+type PermutedStatePair<Word> = (PermutedState<Word>, PermutedState<Word>);
 
 impl<
         'd,
@@ -458,11 +459,12 @@ impl<
         Ok(2)
     }
 
+
     fn fill_hash_tbl_body(
         &self,
         region: &mut Region<'_, Fp>,
         begin_offset: usize,
-    ) -> Result<(PermutedState<PC::Word>, PermutedState<PC::Word>), Error> {
+    ) -> Result<PermutedStatePair<PC::Word>, Error> {
         let config = &self.config;
         let data = self.data;
 

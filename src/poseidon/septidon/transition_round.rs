@@ -60,7 +60,7 @@ impl TransitionRoundChip {
             input[1].clone(),
             input[2].clone(),
         ];
-        matmul::expr(&mds(), sbox_out)
+        matmul::expr(mds(), sbox_out)
     }
 
     fn round_constant<F: CachedConstants>() -> F {
@@ -104,7 +104,7 @@ impl TransitionRoundChip {
             input[1],
             input[2],
         ];
-        let output = join_values(sbox_out).map(|s| matmul::value(&mds(), s));
+        let output = join_values(sbox_out).map(|s| matmul::value(mds(), s));
         split_values(output)
     }
 

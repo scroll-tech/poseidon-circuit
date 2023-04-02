@@ -80,14 +80,12 @@ impl SeptidonChip {
             )
         };
 
-        let chip = Self {
+        Self {
             control_chip,
             transition_chip,
             full_round_chip,
             partial_round_chip,
-        };
-
-        chip
+        }
     }
 
     /// How many rows are used per permutation.
