@@ -258,7 +258,7 @@ impl<F: FieldExt, const WIDTH: usize, const RATE: usize> Chip<F> for Pow5Chip<F,
     }
 }
 
-impl<F: FieldExt, S: Spec<F, 3, 2>> PermuteChip<F, S> for Pow5Chip<F, 3, 2> {
+impl<F: FieldExt, S: Spec<F, 3, 2>> PermuteChip<F, S, 3, 2> for Pow5Chip<F, 3, 2> {
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         let state = [0; 3].map(|_| meta.advice_column());
         let partial_sbox = meta.advice_column();

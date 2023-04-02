@@ -742,12 +742,12 @@ mod tests {
 
     // test circuit derived from table data
     //#[derive(Clone, Default, Debug)]
-    struct TestCircuit<PC: PermuteChip<Fr>> {
+    struct TestCircuit<PC> {
         table: PoseidonHashTable<Fr>,
         _phantom: PhantomData<PC>,
     }
 
-    impl<PC: PermuteChip<Fr>> TestCircuit<PC> {
+    impl<PC: PermuteChip<Fr, <Fr as Hashable>::SpecType, 3, 2>> TestCircuit<PC> {
         pub fn new(table: PoseidonHashTable<Fr>) -> Self {
             TestCircuit {
                 table,
@@ -756,7 +756,7 @@ mod tests {
         }
     }
 
-    impl<PC: PermuteChip<Fr> + PoseidonInstructions<Fr, <Fr as Hashable>::SpecType, 3, 2>>
+    impl<PC: PermuteChip<Fr, <Fr as Hashable>::SpecType, 3, 2>>
         Circuit<Fr> for TestCircuit<PC>
     {
         type Config = (SpongeConfig<Fr, PC>, usize);
@@ -826,7 +826,7 @@ mod tests {
     }
 
     fn poseidon_hash_circuit_impl<
-        PC: PermuteChip<Fr> + PoseidonInstructions<Fr, <Fr as Hashable>::SpecType, 3, 2>,
+        PC: PermuteChip<Fr, <Fr as Hashable>::SpecType, 3, 2>,
     >() {
         let message1 = [
             Fr::from_str_vartime("1").unwrap(),
@@ -854,7 +854,7 @@ mod tests {
     }
 
     fn poseidon_var_len_hash_circuit_impl<
-        PC: PermuteChip<Fr> + PoseidonInstructions<Fr, <Fr as Hashable>::SpecType, 3, 2>,
+        PC: PermuteChip<Fr, <Fr as Hashable>::SpecType, 3, 2>,
     >() {
         let message1 = [
             Fr::from_str_vartime("1").unwrap(),
