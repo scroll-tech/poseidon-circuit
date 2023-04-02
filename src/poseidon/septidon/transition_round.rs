@@ -53,7 +53,9 @@ impl TransitionRoundChip {
 
     // Return an expression of the state after the first partial round given the state before.
     // TODO: implement with with degree <= 5 using the helper cell.
-    fn first_partial_round_expr<F: CachedConstants>(input: &[Expression<F>; 3]) -> [Expression<F>; 3] {
+    fn first_partial_round_expr<F: CachedConstants>(
+        input: &[Expression<F>; 3],
+    ) -> [Expression<F>; 3] {
         let rc = Expression::Constant(Self::round_constant());
         let sbox_out = [
             params::sbox::expr(input[0].clone(), rc),

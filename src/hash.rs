@@ -1,8 +1,6 @@
 //! The hash circuit base on poseidon.
 
-use crate::poseidon::primitives::{
-    ConstantLengthIden3, Domain, Hash, Spec, VariableLengthIden3,
-};
+use crate::poseidon::primitives::{ConstantLengthIden3, Domain, Hash, Spec, VariableLengthIden3};
 use halo2_proofs::halo2curves::bn256::Fr;
 use halo2_proofs::{arithmetic::FieldExt, circuit::AssignedCell};
 
@@ -11,7 +9,7 @@ mod chip_long {
     use crate::poseidon::primitives::{P128Pow5T3, P128Pow5T3Constants};
     use crate::poseidon::Pow5Chip;
     /// The specified base hashable trait
-    pub trait Hashablebase : P128Pow5T3Constants{}
+    pub trait Hashablebase: P128Pow5T3Constants {}
     /// Set the spec type as P128Pow5T3
     pub type HashSpec<F> = P128Pow5T3<F>;
     /// The configuration of the Poseidon hash chip.
@@ -19,7 +17,6 @@ mod chip_long {
     /// The Poseidon hash chip.
     pub type PoseidonHashChip<'d, F, const STEP: usize> =
         SpongeChip<'d, F, STEP, Pow5Chip<F, 3, 2>>;
-    
 }
 
 mod chip_short {
@@ -27,7 +24,7 @@ mod chip_short {
     use crate::poseidon::primitives::P128Pow5T3Compact;
     use crate::poseidon::{CachedConstants, SeptidonChip};
     /// The specified base hashable trait
-    pub trait Hashablebase : CachedConstants{}
+    pub trait Hashablebase: CachedConstants {}
     /// Set the spec type as P128Pow5T3Compact
     pub type HashSpec<F> = P128Pow5T3Compact<F>;
     /// The configuration of the Poseidon hash chip.
@@ -373,12 +370,8 @@ pub struct SpongeChip<'d, Fp: FieldExt, const STEP: usize, PC: Chip<Fp> + Clone 
 type PermutedState<Word> = Vec<[Word; 3]>;
 type PermutedStatePair<Word> = (PermutedState<Word>, PermutedState<Word>);
 
-impl<
-        'd,
-        Fp: Hashable,
-        const STEP: usize,
-        PC: PermuteChip<Fp, Fp::SpecType, 3, 2>,
-    > SpongeChip<'d, Fp, STEP, PC>
+impl<'d, Fp: Hashable, const STEP: usize, PC: PermuteChip<Fp, Fp::SpecType, 3, 2>>
+    SpongeChip<'d, Fp, STEP, PC>
 {
     ///construct the chip
     pub fn construct(
@@ -458,7 +451,6 @@ impl<
 
         Ok(2)
     }
-
 
     fn fill_hash_tbl_body(
         &self,
@@ -761,9 +753,7 @@ mod tests {
         }
     }
 
-    impl<PC: PermuteChip<Fr, <Fr as Hashable>::SpecType, 3, 2>>
-        Circuit<Fr> for TestCircuit<PC>
-    {
+    impl<PC: PermuteChip<Fr, <Fr as Hashable>::SpecType, 3, 2>> Circuit<Fr> for TestCircuit<PC> {
         type Config = (SpongeConfig<Fr, PC>, usize);
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -830,9 +820,7 @@ mod tests {
         poseidon_hash_circuit_impl::<SeptidonChip>();
     }
 
-    fn poseidon_hash_circuit_impl<
-        PC: PermuteChip<Fr, <Fr as Hashable>::SpecType, 3, 2>,
-    >() {
+    fn poseidon_hash_circuit_impl<PC: PermuteChip<Fr, <Fr as Hashable>::SpecType, 3, 2>>() {
         let message1 = [
             Fr::from_str_vartime("1").unwrap(),
             Fr::from_str_vartime("2").unwrap(),
@@ -858,9 +846,7 @@ mod tests {
         poseidon_var_len_hash_circuit_impl::<SeptidonChip>();
     }
 
-    fn poseidon_var_len_hash_circuit_impl<
-        PC: PermuteChip<Fr, <Fr as Hashable>::SpecType, 3, 2>,
-    >() {
+    fn poseidon_var_len_hash_circuit_impl<PC: PermuteChip<Fr, <Fr as Hashable>::SpecType, 3, 2>>() {
         let message1 = [
             Fr::from_str_vartime("1").unwrap(),
             Fr::from_str_vartime("2").unwrap(),

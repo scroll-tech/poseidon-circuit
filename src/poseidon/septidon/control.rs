@@ -1,7 +1,7 @@
 use super::params::GATE_DEGREE_5;
 use super::util::query;
-use halo2_proofs::circuit::{Region, Value};
 use halo2_proofs::arithmetic::FieldExt;
+use halo2_proofs::circuit::{Region, Value};
 //use halo2_proofs::halo2curves::bn256::Fr as F;
 use halo2_proofs::plonk::{Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells};
 use halo2_proofs::poly::Rotation;
@@ -48,7 +48,10 @@ impl ControlChip {
         Ok(())
     }
 
-    fn derive_selector<F: FieldExt>(is_last: Column<Fixed>, meta: &mut VirtualCells<'_, F>) -> Expression<F> {
+    fn derive_selector<F: FieldExt>(
+        is_last: Column<Fixed>,
+        meta: &mut VirtualCells<'_, F>,
+    ) -> Expression<F> {
         if GATE_DEGREE_5 {
             // Variant with no selector. Do not disable gates, do not increase the gate degree.
             Expression::Constant(F::one())

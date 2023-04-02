@@ -22,7 +22,10 @@ impl FullRoundChip {
         (chip, loop_body)
     }
 
-    fn full_round_expr<F: CachedConstants>(&self, meta: &mut VirtualCells<'_, F>) -> [Expression<F>; 3] {
+    fn full_round_expr<F: CachedConstants>(
+        &self,
+        meta: &mut VirtualCells<'_, F>,
+    ) -> [Expression<F>; 3] {
         let sbox_out = self.0.map(|sbox: &SBox| sbox.output_expr(meta));
         matmul::expr(mds(), sbox_out)
     }

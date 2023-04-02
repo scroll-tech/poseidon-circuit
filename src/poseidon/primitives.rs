@@ -26,8 +26,8 @@ pub(crate) mod pasta;
 mod p128pow5t3;
 mod p128pow5t3_compact;
 
-pub(crate) use p128pow5t3::P128Pow5T3Constants;
 pub use p128pow5t3::P128Pow5T3;
+pub(crate) use p128pow5t3::P128Pow5T3Constants;
 pub use p128pow5t3_compact::P128Pow5T3Compact;
 
 use grain::SboxType;

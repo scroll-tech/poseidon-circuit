@@ -14,5 +14,5 @@ mod tests;
 mod transition_round;
 mod util;
 
-pub use septidon_chip::SeptidonChip;
 pub use params::CachedConstants;
+pub use septidon_chip::SeptidonChip;

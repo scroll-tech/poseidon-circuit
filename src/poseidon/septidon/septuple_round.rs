@@ -14,7 +14,10 @@ pub struct SeptupleRoundChip {
 }
 
 impl SeptupleRoundChip {
-    pub fn configure<F: CachedConstants>(cs: &mut ConstraintSystem<F>, q: Expression<F>) -> (Self, LoopBody<F>) {
+    pub fn configure<F: CachedConstants>(
+        cs: &mut ConstraintSystem<F>,
+        q: Expression<F>,
+    ) -> (Self, LoopBody<F>) {
         let chip = Self {
             first_sbox: SBox::configure(cs),
             first_linears: [Cell::configure(cs), Cell::configure(cs)],

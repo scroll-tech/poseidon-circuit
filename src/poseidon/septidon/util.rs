@@ -14,7 +14,10 @@ where
 }
 
 /// Helper to make queries to a ConstraintSystem. Escape the "create_gate" closures.
-pub fn query<T, F:FieldExt>(cs: &mut ConstraintSystem<F>, f: impl FnOnce(&mut VirtualCells<'_, F>) -> T) -> T {
+pub fn query<T, F: FieldExt>(
+    cs: &mut ConstraintSystem<F>,
+    f: impl FnOnce(&mut VirtualCells<'_, F>) -> T,
+) -> T {
     let mut queries: Option<T> = None;
     cs.create_gate("query", |meta| {
         queries = Some(f(meta));
@@ -23,14 +26,14 @@ pub fn query<T, F:FieldExt>(cs: &mut ConstraintSystem<F>, f: impl FnOnce(&mut Vi
     queries.unwrap()
 }
 
-pub fn join_values<F:FieldExt>(values: [Value<F>; 3]) -> Value<[F; 3]> {
+pub fn join_values<F: FieldExt>(values: [Value<F>; 3]) -> Value<[F; 3]> {
     values[0]
         .zip(values[1])
         .zip(values[2])
         .map(|((v0, v1), v2)| [v0, v1, v2])
 }
 
-pub fn split_values<F:FieldExt>(values: Value<[F; 3]>) -> [Value<F>; 3] {
+pub fn split_values<F: FieldExt>(values: Value<[F; 3]>) -> [Value<F>; 3] {
     [
         values.map(|v| v[0]),
         values.map(|v| v[1]),
@@ -42,12 +45,12 @@ pub mod pow_5 {
     use super::FieldExt;
     use halo2_proofs::plonk::Expression;
 
-    pub fn expr<F:FieldExt>(v: Expression<F>) -> Expression<F> {
+    pub fn expr<F: FieldExt>(v: Expression<F>) -> Expression<F> {
         let v2 = v.clone() * v.clone();
         v2.clone() * v2 * v
     }
 
-    pub fn value<F:FieldExt>(v: F) -> F {
+    pub fn value<F: FieldExt>(v: F) -> F {
         let v2 = v * v;
         v2 * v2 * v
     }
@@ -55,13 +58,13 @@ pub mod pow_5 {
 
 /// Matrix multiplication expressions and values.
 pub mod matmul {
-    use super::FieldExt;
     use super::super::params::Mds;
+    use super::FieldExt;
     use halo2_proofs::plonk::Expression;
     use std::convert::TryInto;
 
     /// Multiply a vector of expressions by a constant matrix.
-    pub fn expr<F:FieldExt>(matrix: &Mds<F>, vector: [Expression<F>; 3]) -> [Expression<F>; 3] {
+    pub fn expr<F: FieldExt>(matrix: &Mds<F>, vector: [Expression<F>; 3]) -> [Expression<F>; 3] {
         (0..3)
             .map(|next_idx| {
                 (0..3)
@@ -75,7 +78,7 @@ pub mod matmul {
     }
 
     /// Multiply a vector of values by a constant matrix.
-    pub fn value<F:FieldExt>(matrix: &Mds<F>, vector: [F; 3]) -> [F; 3] {
+    pub fn value<F: FieldExt>(matrix: &Mds<F>, vector: [F; 3]) -> [F; 3] {
         (0..3)
             .map(|next_idx| {
                 (0..3)

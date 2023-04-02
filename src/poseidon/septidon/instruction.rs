@@ -3,11 +3,11 @@ use super::super::{
     PermuteChip, PoseidonInstructions, StateWord, Var,
 };
 use super::{params::CachedConstants, util::map_array, SeptidonChip};
+use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::{
     circuit::{Chip, Layouter},
     plonk::{ConstraintSystem, Error},
 };
-use halo2_proofs::arithmetic::FieldExt;
 
 const WIDTH: usize = 3;
 const RATE: usize = 2;
@@ -32,7 +32,9 @@ impl<F: CachedConstants, S: Spec<F, WIDTH, RATE>> PermuteChip<F, S, WIDTH, RATE>
     }
 }
 
-impl<F: CachedConstants, S: Spec<F, WIDTH, RATE>> PoseidonInstructions<F, S, WIDTH, RATE> for SeptidonChip {
+impl<F: CachedConstants, S: Spec<F, WIDTH, RATE>> PoseidonInstructions<F, S, WIDTH, RATE>
+    for SeptidonChip
+{
     type Word = StateWord<F>;
 
     fn permute(
