@@ -52,7 +52,14 @@ pub trait Hashable: Hashablebase {
     fn hash(inp: [Self; 2]) -> Self;
     /// obtain the rows consumed by each circuit block
     fn hash_block_size() -> usize {
-        1 + Self::SpecType::full_rounds() + (Self::SpecType::partial_rounds() + 1) / 2
+        #[cfg(feature = "short")]
+        {
+            1 + Self::SpecType::full_rounds()
+        }
+        #[cfg(not(feature = "short"))]
+        {
+            1 + Self::SpecType::full_rounds() + (Self::SpecType::partial_rounds() + 1) / 2
+        }
     }
     /// init a hasher used for hash
     fn hasher() -> Hash<Self, Self::SpecType, Self::DomainType, 3, 2> {
