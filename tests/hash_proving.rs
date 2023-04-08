@@ -79,13 +79,16 @@ fn hash_circuit() {
 
 #[test]
 fn vk_validity() {
+    use halo2_proofs::SerdeFormat;
+
     let params = Params::<Bn256>::unsafe_setup(8);
 
     let circuit = TestCircuit(PoseidonHashTable::default(), 3);
     let vk1 = keygen_vk(&params, &circuit).unwrap();
 
     let mut vk1_buf: Vec<u8> = Vec::new();
-    vk1.write(&mut vk1_buf).unwrap();
+    vk1.write(&mut vk1_buf, SerdeFormat::RawBytesUnchecked)
+        .unwrap();
 
     let circuit = TestCircuit(
         PoseidonHashTable {
@@ -106,7 +109,8 @@ fn vk_validity() {
     let vk2 = keygen_vk(&params, &circuit).unwrap();
 
     let mut vk2_buf: Vec<u8> = Vec::new();
-    vk2.write(&mut vk2_buf).unwrap();
+    vk2.write(&mut vk2_buf, SerdeFormat::RawBytesUnchecked)
+        .unwrap();
 
     assert_eq!(vk1_buf, vk2_buf);
 }

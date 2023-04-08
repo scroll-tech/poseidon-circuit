@@ -3,6 +3,7 @@ use std::marker::PhantomData;
 
 use super::{Mds, Spec};
 
+/// The trait required for fields can handle a pow5 sbox, 3 field, 2 rate permutation
 pub trait P128Pow5T3Constants: FieldExt {
     fn partial_rounds() -> usize {
         56

@@ -2,7 +2,8 @@ use super::super::{
     primitives::{Spec, State},
     PermuteChip, PoseidonInstructions, StateWord, Var,
 };
-use super::{params::F, util::map_array, SeptidonChip};
+use super::{params::CachedConstants, util::map_array, SeptidonChip};
+use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::{
     circuit::{Chip, Layouter},
     plonk::{ConstraintSystem, Error},
@@ -11,7 +12,7 @@ use halo2_proofs::{
 const WIDTH: usize = 3;
 const RATE: usize = 2;
 
-impl PermuteChip<F> for SeptidonChip {
+impl<F: CachedConstants, S: Spec<F, WIDTH, RATE>> PermuteChip<F, S, WIDTH, RATE> for SeptidonChip {
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         let chip = Self::configure(meta);
 
@@ -31,7 +32,9 @@ impl PermuteChip<F> for SeptidonChip {
     }
 }
 
-impl<S: Spec<F, WIDTH, RATE>> PoseidonInstructions<F, S, WIDTH, RATE> for SeptidonChip {
+impl<F: CachedConstants, S: Spec<F, WIDTH, RATE>> PoseidonInstructions<F, S, WIDTH, RATE>
+    for SeptidonChip
+{
     type Word = StateWord<F>;
 
     fn permute(
@@ -48,7 +51,7 @@ impl<S: Spec<F, WIDTH, RATE>> PoseidonInstructions<F, S, WIDTH, RATE> for Septid
                 let chip_input = self.initial_state_cells();
                 for i in 0..WIDTH {
                     initial_state[i].0.copy_advice(
-                        || format!("load state_{}", i),
+                        || format!("load state_{i}"),
                         region,
                         chip_input[i].column,
                         chip_input[i].offset as usize,
@@ -56,7 +59,7 @@ impl<S: Spec<F, WIDTH, RATE>> PoseidonInstructions<F, S, WIDTH, RATE> for Septid
                 }
 
                 // Assign the internal witness of the permutation.
-                let initial_values = map_array(&initial_state, |word| word.value());
+                let initial_values = map_array(initial_state, |word| word.value());
                 let final_values = self.assign_permutation(region, initial_values)?;
 
                 // Return the cells containing the final state.
@@ -80,7 +83,7 @@ impl<S: Spec<F, WIDTH, RATE>> PoseidonInstructions<F, S, WIDTH, RATE> for Septid
     }
 }
 
-impl Chip<F> for SeptidonChip {
+impl<F: FieldExt> Chip<F> for SeptidonChip {
     type Config = Self;
 
     type Loaded = ();

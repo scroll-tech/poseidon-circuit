@@ -12,7 +12,7 @@ thiserror = "1.0"
 bitvec = "1"
 
 [patch."https://github.com/privacy-scaling-explorations/halo2.git"]
-halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "scroll-dev-1220" }
+halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "scroll-dev-0220" }
 
 [features]
 # Use an implementation using fewer rows (8) per permutation.
