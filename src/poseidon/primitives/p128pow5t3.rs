@@ -1,10 +1,10 @@
-use halo2_proofs::ff::{FromUniformBytes, PrimeField};
+use halo2_proofs::ff::FromUniformBytes;
 use std::marker::PhantomData;
 
 use super::{Mds, Spec};
 
 /// The trait required for fields can handle a pow5 sbox, 3 field, 2 rate permutation
-pub trait P128Pow5T3Constants: PrimeField {
+pub trait P128Pow5T3Constants: FromUniformBytes<64> + Ord {
     fn partial_rounds() -> usize {
         56
     }
@@ -24,7 +24,7 @@ pub struct P128Pow5T3<C> {
     _marker: PhantomData<C>,
 }
 
-impl<Fp: P128Pow5T3Constants + FromUniformBytes<64> + Ord> Spec<Fp, 3, 2> for P128Pow5T3<Fp> {
+impl<Fp: P128Pow5T3Constants> Spec<Fp, 3, 2> for P128Pow5T3<Fp> {
     fn full_rounds() -> usize {
         8
     }

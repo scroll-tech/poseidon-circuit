@@ -13,7 +13,6 @@ use halo2_proofs::poly::kzg::strategy::SingleStrategy;
 use halo2_proofs::transcript::{
     Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
 };
-use halo2_proofs::SerdeFormat;
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
     plonk::{Circuit, ConstraintSystem, Error},

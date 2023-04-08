@@ -1,7 +1,7 @@
 use super::params;
 use halo2_proofs::circuit::{Region, Value};
 //use halo2_proofs::halo2curves::bn256::Fr as F;
-use halo2_proofs::arithmetic::FieldExt;
+use halo2_proofs::ff::PrimeField;
 use halo2_proofs::plonk::{
     Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells,
 };
@@ -17,7 +17,7 @@ pub struct Cell {
 }
 
 impl Cell {
-    pub fn configure<F: FieldExt>(cs: &mut ConstraintSystem<F>) -> Self {
+    pub fn configure<F: PrimeField>(cs: &mut ConstraintSystem<F>) -> Self {
         Cell {
             column: cs.advice_column(),
             offset: 0,
@@ -35,7 +35,7 @@ impl Cell {
         }
     }
 
-    pub fn query<F: FieldExt>(&self, meta: &mut VirtualCells<F>, offset: i32) -> Expression<F> {
+    pub fn query<F: PrimeField>(&self, meta: &mut VirtualCells<F>, offset: i32) -> Expression<F> {
         meta.query_advice(self.column, Rotation(self.offset + offset))
     }
 
@@ -44,7 +44,7 @@ impl Cell {
         self.offset as usize
     }
 
-    pub fn assign<F: FieldExt>(
+    pub fn assign<F: PrimeField>(
         &self,
         region: &mut Region<'_, F>,
         origin_offset: usize,
@@ -64,7 +64,7 @@ pub struct SBox {
 }
 
 impl SBox {
-    pub fn configure<F: FieldExt>(cs: &mut ConstraintSystem<F>) -> Self {
+    pub fn configure<F: PrimeField>(cs: &mut ConstraintSystem<F>) -> Self {
         SBox {
             input: Cell::configure(cs),
             round_constant: cs.fixed_column(),
@@ -72,7 +72,7 @@ impl SBox {
     }
 
     /// Assign the witness of the input.
-    pub fn assign<F: FieldExt>(
+    pub fn assign<F: PrimeField>(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
@@ -95,15 +95,15 @@ impl SBox {
         Ok(output)
     }
 
-    pub fn input_expr<F: FieldExt>(&self, meta: &mut VirtualCells<'_, F>) -> Expression<F> {
+    pub fn input_expr<F: PrimeField>(&self, meta: &mut VirtualCells<'_, F>) -> Expression<F> {
         self.input.query(meta, 0)
     }
 
-    pub fn rc_expr<F: FieldExt>(&self, meta: &mut VirtualCells<'_, F>) -> Expression<F> {
+    pub fn rc_expr<F: PrimeField>(&self, meta: &mut VirtualCells<'_, F>) -> Expression<F> {
         meta.query_fixed(self.round_constant, Rotation(self.input.offset))
     }
 
-    pub fn output_expr<F: FieldExt>(&self, meta: &mut VirtualCells<'_, F>) -> Expression<F> {
+    pub fn output_expr<F: PrimeField>(&self, meta: &mut VirtualCells<'_, F>) -> Expression<F> {
         let input = self.input_expr(meta);
         let round_constant = self.rc_expr(meta);
         params::sbox::expr(input, round_constant)
@@ -114,7 +114,7 @@ impl SBox {
 pub struct FullState(pub [SBox; 3]);
 
 impl FullState {
-    pub fn configure<F: FieldExt>(cs: &mut ConstraintSystem<F>) -> Self {
+    pub fn configure<F: PrimeField>(cs: &mut ConstraintSystem<F>) -> Self {
         Self([
             SBox::configure(cs),
             SBox::configure(cs),

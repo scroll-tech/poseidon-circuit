@@ -43,7 +43,7 @@ pub use chip_long::*;
 pub use chip_short::*;
 
 /// indicate an field can be hashed in merkle tree (2 Fields to 1 Field)
-pub trait Hashable: Hashablebase + FromUniformBytes<64> + Ord{
+pub trait Hashable: Hashablebase + FromUniformBytes<64> + Ord {
     /// the spec type used in circuit for this hashable field
     type SpecType: Spec<Self, 3, 2>;
     /// the domain type used for hash calculation

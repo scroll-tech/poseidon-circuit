@@ -6,7 +6,7 @@ use std::marker::PhantomData;
 
 use halo2_proofs::{
     circuit::{AssignedCell, Chip, Layouter},
-    ff::{Field, FromUniformBytes, PrimeField},
+    ff::{Field, FromUniformBytes},
     plonk::{ConstraintSystem, Error},
 };
 
@@ -30,8 +30,12 @@ pub enum PaddedWord<F: Field> {
 }
 
 /// This trait is the interface to chips that implement a permutation.
-pub trait PermuteChip<F: PrimeField, S: Spec<F, T, RATE>, const T: usize, const RATE: usize>:
-    Chip<F> + Clone + DebugT + PoseidonInstructions<F, S, T, RATE>
+pub trait PermuteChip<
+    F: FromUniformBytes<64> + Ord,
+    S: Spec<F, T, RATE>,
+    const T: usize,
+    const RATE: usize,
+>: Chip<F> + Clone + DebugT + PoseidonInstructions<F, S, T, RATE>
 {
     /// Configure the permutation chip.
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config;

@@ -1,7 +1,7 @@
 use super::params::GATE_DEGREE_5;
 use super::util::query;
-use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::circuit::{Region, Value};
+use halo2_proofs::ff::PrimeField;
 //use halo2_proofs::halo2curves::bn256::Fr as F;
 use halo2_proofs::plonk::{Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells};
 use halo2_proofs::poly::Rotation;
@@ -11,7 +11,7 @@ pub struct ControlChip {
     is_last: Column<Fixed>,
 }
 
-pub struct ControlSignals<F: FieldExt> {
+pub struct ControlSignals<F: PrimeField> {
     // Signals that control the switches between steps of the permutation.
     pub break_full_rounds: Expression<F>,
     pub transition_round: Expression<F>,
@@ -22,7 +22,7 @@ pub struct ControlSignals<F: FieldExt> {
 }
 
 impl ControlChip {
-    pub fn configure<F: FieldExt>(cs: &mut ConstraintSystem<F>) -> (Self, ControlSignals<F>) {
+    pub fn configure<F: PrimeField>(cs: &mut ConstraintSystem<F>) -> (Self, ControlSignals<F>) {
         let is_last = cs.fixed_column();
 
         let signals = query(cs, |meta| {
@@ -43,18 +43,18 @@ impl ControlChip {
     }
 
     /// Assign the fixed positions of the last row of permutations.
-    pub fn assign<F: FieldExt>(&self, region: &mut Region<'_, F>) -> Result<(), Error> {
-        region.assign_fixed(|| "", self.is_last, 7, || Value::known(F::one()))?;
+    pub fn assign<F: PrimeField>(&self, region: &mut Region<'_, F>) -> Result<(), Error> {
+        region.assign_fixed(|| "", self.is_last, 7, || Value::known(F::ONE))?;
         Ok(())
     }
 
-    fn derive_selector<F: FieldExt>(
+    fn derive_selector<F: PrimeField>(
         is_last: Column<Fixed>,
         meta: &mut VirtualCells<'_, F>,
     ) -> Expression<F> {
         if GATE_DEGREE_5 {
             // Variant with no selector. Do not disable gates, do not increase the gate degree.
-            Expression::Constant(F::one())
+            Expression::Constant(F::ONE)
         } else {
             // Variant with a selector enabled on all rows of valid permutations.
             // Detect is_last=1, seen from its own row or up to 7 rows below.

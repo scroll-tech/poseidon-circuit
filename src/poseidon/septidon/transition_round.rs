@@ -96,7 +96,7 @@ impl TransitionRoundChip {
             cell.assign(region, middle_break_offset, value)?;
         }
         self.helper_cell()
-            .assign(region, middle_break_offset, Value::known(F::zero()))?;
+            .assign(region, middle_break_offset, Value::known(F::ZERO))?;
         Ok(output)
     }
 
@@ -121,7 +121,7 @@ impl TransitionRoundChip {
             cell.assign(region, final_break_offset, value)?;
         }
         self.helper_cell()
-            .assign(region, final_break_offset, Value::known(F::zero()))?;
+            .assign(region, final_break_offset, Value::known(F::ZERO))?;
         Ok(())
     }
 }

@@ -260,7 +260,9 @@ impl<F: PrimeField, const WIDTH: usize, const RATE: usize> Chip<F> for Pow5Chip<
     }
 }
 
-impl<F: FieldExt, S: Spec<F, 3, 2>> PermuteChip<F, S, 3, 2> for Pow5Chip<F, 3, 2> {
+impl<F: FromUniformBytes<64> + Ord, S: Spec<F, 3, 2>> PermuteChip<F, S, 3, 2>
+    for Pow5Chip<F, 3, 2>
+{
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         let state = [0; 3].map(|_| meta.advice_column());
         let partial_sbox = meta.advice_column();
@@ -521,7 +523,7 @@ impl<F: PrimeField, const WIDTH: usize> Pow5State<F, WIDTH> {
                 self.0.iter().enumerate().map(|(idx, word)| {
                     word.value() + Value::known(config.round_constants[round][idx])
                 });
-            let r: Vec<Value<F>> = q.map(|q| q.map(|q| q.pow(&config.alpha))).collect();
+            let r: Vec<Value<F>> = q.map(|q| q.map(|q| q.pow(config.alpha))).collect();
             let m = &config.m_reg;
             let state = m.iter().map(|m_i| {
                 r.iter()
@@ -556,7 +558,7 @@ impl<F: PrimeField, const WIDTH: usize> Pow5State<F, WIDTH> {
                     .map(|(idx, word)| {
                         word.value()
                             .map(|v| v + config.round_constants[round][idx])
-                            .map(|v| if idx == 0 { v.pow(&config.alpha) } else { v })
+                            .map(|v| if idx == 0 { v.pow(config.alpha) } else { v })
                     })
                     .collect();
 
@@ -586,7 +588,7 @@ impl<F: PrimeField, const WIDTH: usize> Pow5State<F, WIDTH> {
             let p: Vec<_> = self.0.iter().map(|word| word.value()).collect();
 
             let r_0 = (p[0] + Value::known(config.round_constants[round][0]))
-                .map(|v| v.pow(&config.alpha));
+                .map(|v| v.pow(config.alpha));
             let r_i = p[1..]
                 .iter()
                 .enumerate()
@@ -625,7 +627,7 @@ impl<F: PrimeField, const WIDTH: usize> Pow5State<F, WIDTH> {
             }
 
             let r_0 = (p_mid[0] + Value::known(config.round_constants[round + 1][0]))
-                .map(|v| v.pow(&config.alpha));
+                .map(|v| v.pow(config.alpha));
             let r_i = p_mid[1..]
                 .iter()
                 .enumerate()
