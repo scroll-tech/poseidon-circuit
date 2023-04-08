@@ -80,6 +80,8 @@ fn hash_circuit() {
 
 #[test]
 fn vk_validity() {
+    use halo2_proofs::SerdeFormat;
+
     let params = Params::<Bn256>::unsafe_setup(8);
 
     let circuit = TestCircuit(PoseidonHashTable::default(), 3);

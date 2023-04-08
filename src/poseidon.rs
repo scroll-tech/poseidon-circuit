@@ -14,7 +14,7 @@ mod pow5;
 pub use pow5::{Pow5Chip, Pow5Config, StateWord, Var};
 
 mod septidon;
-pub use septidon::SeptidonChip;
+pub use septidon::{CachedConstants, SeptidonChip};
 
 pub mod primitives;
 use primitives::{Absorbing, ConstantLength, Domain, Spec, SpongeMode, Squeezing, State};
@@ -30,7 +30,9 @@ pub enum PaddedWord<F: Field> {
 }
 
 /// This trait is the interface to chips that implement a permutation.
-pub trait PermuteChip<F: PrimeField>: Chip<F> + Clone + DebugT {
+pub trait PermuteChip<F: PrimeField, S: Spec<F, T, RATE>, const T: usize, const RATE: usize>:
+    Chip<F> + Clone + DebugT + PoseidonInstructions<F, S, T, RATE>
+{
     /// Configure the permutation chip.
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config;
 

@@ -8,8 +8,6 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
-use crate::Hashable;
-
 use super::{
     primitives::{Absorbing, Domain, Mds, Spec, Squeezing, State},
     PaddedWord, PermuteChip, PoseidonInstructions, PoseidonSpongeInstructions,
@@ -262,13 +260,13 @@ impl<F: PrimeField, const WIDTH: usize, const RATE: usize> Chip<F> for Pow5Chip<
     }
 }
 
-impl<F: Hashable> PermuteChip<F> for Pow5Chip<F, 3, 2> {
+impl<F: FieldExt, S: Spec<F, 3, 2>> PermuteChip<F, S, 3, 2> for Pow5Chip<F, 3, 2> {
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         let state = [0; 3].map(|_| meta.advice_column());
         let partial_sbox = meta.advice_column();
         let constants = [0; 6].map(|_| meta.fixed_column());
 
-        Pow5Chip::configure::<F::SpecType>(
+        Pow5Chip::configure::<S>(
             meta,
             state,
             partial_sbox,

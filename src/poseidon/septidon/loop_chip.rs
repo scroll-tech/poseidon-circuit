@@ -1,22 +1,23 @@
 use super::state::Cell;
 use super::util::select;
-use halo2_proofs::halo2curves::bn256::Fr as F;
+use halo2_proofs::arithmetic::FieldExt;
+//use halo2_proofs::halo2curves::bn256::Fr as F;
 use halo2_proofs::plonk::{ConstraintSystem, Constraints, Expression};
 
 #[derive(Clone, Debug)]
 pub struct LoopChip {}
 
-pub struct LoopBody {
+pub struct LoopBody<F> {
     pub next_state: [Expression<F>; 3],
     /// Cells where the output is, relative to the break signal.
     pub output: [Expression<F>; 3],
 }
 
 impl LoopChip {
-    pub fn configure(
+    pub fn configure<F: FieldExt>(
         cs: &mut ConstraintSystem<F>,
         q: Expression<F>,
-        body: LoopBody,
+        body: LoopBody<F>,
         break_signal: Expression<F>,
         output: [Cell; 3],
     ) -> Self {

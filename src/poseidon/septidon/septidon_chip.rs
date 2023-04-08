@@ -1,11 +1,11 @@
 use halo2_proofs::circuit::{Region, Value};
-use halo2_proofs::halo2curves::bn256::Fr as F;
+//use halo2_proofs::halo2curves::bn256::Fr as F;
 use halo2_proofs::plonk::{ConstraintSystem, Error};
 
 use super::control::ControlChip;
 use super::full_round::FullRoundChip;
 use super::loop_chip::LoopChip;
-use super::params::round_constant;
+use super::params::{round_constant, CachedConstants};
 use super::septuple_round::SeptupleRoundChip;
 use super::state::Cell;
 use super::transition_round::TransitionRoundChip;
@@ -34,7 +34,7 @@ pub struct SeptidonChip {
 
 impl SeptidonChip {
     /// Create a new chip.
-    pub fn configure(cs: &mut ConstraintSystem<F>) -> Self {
+    pub fn configure<F: CachedConstants>(cs: &mut ConstraintSystem<F>) -> Self {
         let (control_chip, signals) = ControlChip::configure(cs);
         let q = || signals.selector.clone();
 
@@ -80,14 +80,12 @@ impl SeptidonChip {
             )
         };
 
-        let chip = Self {
+        Self {
             control_chip,
             transition_chip,
             full_round_chip,
             partial_round_chip,
-        };
-
-        chip
+        }
     }
 
     /// How many rows are used per permutation.
@@ -115,7 +113,7 @@ impl SeptidonChip {
     }
 
     /// Assign the witness of a permutation into the given region.
-    pub fn assign_permutation(
+    pub fn assign_permutation<F: CachedConstants>(
         &self,
         region: &mut Region<'_, F>,
         initial_state: [Value<F>; 3],
