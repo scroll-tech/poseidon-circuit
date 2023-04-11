@@ -147,7 +147,6 @@ impl<Fp: Hashable, PC: PermuteChip<Fp, Fp::SpecType, 3, 2>> SpongeConfig<Fp, PC>
         hash_table: [Column<Advice>; 5],
         step: usize,
     ) -> Self {
-
         let s_table = meta.complex_selector();
         let s_custom = meta.complex_selector();
 
@@ -344,7 +343,19 @@ impl<Fp: FieldExt> PoseidonHashTable<Fp> {
         ctrl_start: u64,
         step: usize,
     ) {
+        self.stream_inputs_with_check(src, None, ctrl_start, step)
+    }
+
+    /// Add a series of inputs from a field stream with checking of the final hash
+    pub fn stream_inputs_with_check<'d>(
+        &mut self,
+        src: impl IntoIterator<Item = &'d [Fp; 2]>,
+        check: Option<Fp>,
+        ctrl_start: u64,
+        step: usize,
+    ) {
         let mut new_inps: Vec<_> = src.into_iter().copied().collect();
+        assert_ne!(0, new_inps.len());
         let mut ctrl_series: Vec<_> = std::iter::successors(Some(ctrl_start), |n| {
             if *n > (step as u64) {
                 Some(n - step as u64)
@@ -359,6 +370,8 @@ impl<Fp: FieldExt> PoseidonHashTable<Fp> {
         self.inputs.append(&mut new_inps);
         self.controls.append(&mut ctrl_series);
         assert_eq!(self.inputs.len(), self.controls.len());
+        self.checks.resize(self.inputs.len() - 1, None);
+        self.checks.push(check);
     }
 
     /// return the row which poseidon table use (notice it maybe much smaller
@@ -876,7 +889,7 @@ mod tests {
         let message2 = [Fr::from_str_vartime("50331648").unwrap(), Fr::zero()];
 
         let k = 8;
-        let circuit = TestCircuit::<PC>::new( PoseidonHashTable {
+        let circuit = TestCircuit::<PC>::new(PoseidonHashTable {
             inputs: vec![message1, message2],
             controls: vec![45, 13],
             //checks: vec![None, Some(Fr::from_str_vartime("15002881182751877599173281392790087382867290792048832034781070831698029191486").unwrap())],
