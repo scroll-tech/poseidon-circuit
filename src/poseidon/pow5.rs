@@ -99,10 +99,10 @@ impl<F: FieldExt, const WIDTH: usize, const RATE: usize> Pow5Chip<F, WIDTH, RATE
             meta.enable_equality(column);
         }
 
-        let s_full = meta.selector();
-        let s_partial = meta.selector();
-        let s_partial_single = meta.selector();
-        let s_pad_and_add = meta.selector();
+        let s_full = meta.complex_selector();
+        let s_partial = meta.complex_selector();
+        let s_partial_single = meta.complex_selector();
+        let s_pad_and_add = meta.complex_selector();
 
         let alpha = [5, 0, 0, 0];
         let pow_5 = |v: Expression<F>| {

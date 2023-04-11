@@ -475,8 +475,8 @@ impl<F: FieldExt, S: Spec<F, T, RATE>, const T: usize, const RATE: usize>
     Hash<F, S, VariableLengthIden3, T, RATE>
 {
     /// Hashes the given input.
-    pub fn hash_with_cap(mut self, message: &[F], cap: u64) -> F {
-        self.sponge.update_capacity(F::from_u128(cap as u128));
+    pub fn hash_with_cap(mut self, message: &[F], cap: u128) -> F {
+        self.sponge.update_capacity(F::from_u128(cap));
         for value in message {
             self.sponge.absorb(*value);
         }
