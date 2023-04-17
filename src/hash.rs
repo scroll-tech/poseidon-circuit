@@ -2,6 +2,7 @@
 
 use crate::poseidon::primitives::{ConstantLengthIden3, Domain, Hash, Spec, VariableLengthIden3};
 use halo2_proofs::halo2curves::bn256::Fr;
+use halo2_proofs::plonk::Fixed;
 use halo2_proofs::{arithmetic::FieldExt, circuit::AssignedCell};
 
 mod chip_long {
@@ -117,20 +118,20 @@ use std::fmt::Debug as DebugT;
 
 /// The config for poseidon hash circuit
 #[derive(Clone, Debug)]
-pub struct SpongeConfig<Fp: FieldExt, PC: Chip<Fp> + Clone + DebugT> {
+pub struct SpongeConfig<F: FieldExt, PC: Chip<F> + Clone + DebugT> {
     permute_config: PC::Config,
     hash_table: [Column<Advice>; 5],
     hash_table_aux: [Column<Advice>; 6],
     control_aux: Column<Advice>,
     s_sponge_continue: Column<Advice>,
     control_step_range: TableColumn,
-    s_table: Selector,
+    q_enable: Column<Fixed>,
     s_custom: Selector,
     /// the configured step in var-len mode, i.e (`input_width * bytes in each field`)
     pub step: usize,
 }
 
-impl<Fp: Hashable, PC: PermuteChip<Fp, Fp::SpecType, 3, 2>> SpongeConfig<Fp, PC> {
+impl<F: Hashable, PC: PermuteChip<F, F::SpecType, 3, 2>> SpongeConfig<F, PC> {
     /// obtain the commitment index of hash table
     pub fn commitment_index(&self) -> [usize; 5] {
         self.hash_table.map(|col| col.index())
@@ -143,11 +144,10 @@ impl<Fp: Hashable, PC: PermuteChip<Fp, Fp::SpecType, 3, 2>> SpongeConfig<Fp, PC>
 
     /// build configure for sub circuit
     pub fn configure_sub(
-        meta: &mut ConstraintSystem<Fp>,
-        hash_table: [Column<Advice>; 5],
+        meta: &mut ConstraintSystem<F>,
+        (q_enable, hash_table): (Column<Fixed>, [Column<Advice>; 5]),
         step: usize,
     ) -> Self {
-        let s_table = meta.complex_selector();
         let s_custom = meta.complex_selector();
 
         let hash_table_aux = [0, 1, 2, 3, 4, 5].map(|idx| {
@@ -175,12 +175,12 @@ impl<Fp: Hashable, PC: PermuteChip<Fp, Fp::SpecType, 3, 2>> SpongeConfig<Fp, PC>
         let header_mark = hash_table[4];
 
         meta.create_gate("custom row", |meta| {
-            let s_enable = meta.query_selector(s_custom);
+            let q_custom = meta.query_selector(s_custom);
 
             vec![
-                s_enable.clone() * meta.query_advice(hash_inp[0], Rotation::cur()),
-                s_enable.clone() * meta.query_advice(hash_inp[1], Rotation::cur()),
-                s_enable * meta.query_advice(control, Rotation::cur()),
+                q_custom.clone() * meta.query_advice(hash_inp[0], Rotation::cur()),
+                q_custom.clone() * meta.query_advice(hash_inp[1], Rotation::cur()),
+                q_custom * meta.query_advice(control, Rotation::cur()),
             ]
         });
 
@@ -190,21 +190,21 @@ impl<Fp: Hashable, PC: PermuteChip<Fp, Fp::SpecType, 3, 2>> SpongeConfig<Fp, PC>
                s_continue must be false on each row which control is 0 (MPT mode)
                header_mark is just not(s_continue)
             */
-            let s_enable = meta.query_selector(s_table);
+            let q_enable = meta.query_fixed(q_enable, Rotation::cur());
             let ctrl = meta.query_advice(control, Rotation::cur());
             let ctrl_bool = ctrl.clone() * meta.query_advice(control_aux, Rotation::cur());
             let s_continue = meta.query_advice(s_sponge_continue, Rotation::cur());
 
             vec![
-                s_enable.clone()
+                q_enable.clone()
                     * s_continue.clone()
-                    * (Expression::Constant(Fp::one()) - s_continue.clone()),
-                s_enable.clone() * ctrl * (Expression::Constant(Fp::one()) - ctrl_bool.clone()),
-                s_enable.clone()
+                    * (Expression::Constant(F::one()) - s_continue.clone()),
+                q_enable.clone() * ctrl * (Expression::Constant(F::one()) - ctrl_bool.clone()),
+                q_enable.clone()
                     * s_continue.clone()
-                    * (Expression::Constant(Fp::one()) - ctrl_bool),
-                s_enable
-                    * (Expression::Constant(Fp::one())
+                    * (Expression::Constant(F::one()) - ctrl_bool),
+                q_enable
+                    * (Expression::Constant(F::one())
                         - s_continue
                         - meta.query_advice(header_mark, Rotation::cur())),
             ]
@@ -217,44 +217,44 @@ impl<Fp: Hashable, PC: PermuteChip<Fp, Fp::SpecType, 3, 2>> SpongeConfig<Fp, PC>
                and current ctrl can not be 0
             */
             let s_continue = meta.query_advice(s_sponge_continue, Rotation::cur());
-            let s_enable = meta.query_selector(s_table) * s_continue;
+            let q_enable = meta.query_fixed(q_enable, Rotation::cur()) * s_continue;
             let ctrl = meta.query_advice(control, Rotation::cur());
             let ctrl_prev = meta.query_advice(control, Rotation::prev());
             let ctrl_bool = ctrl.clone() * meta.query_advice(control_aux, Rotation::cur());
 
             vec![
-                s_enable.clone()
+                q_enable.clone()
                     * (ctrl
-                        + Expression::Constant(Fp::from_u128(step as u128 * HASHABLE_DOMAIN_SPEC))
+                        + Expression::Constant(F::from_u128(step as u128 * HASHABLE_DOMAIN_SPEC))
                         - ctrl_prev),
-                s_enable * (Expression::Constant(Fp::one()) - ctrl_bool),
+                q_enable * (Expression::Constant(F::one()) - ctrl_bool),
             ]
         });
 
         meta.lookup("control range check", |meta| {
-            let s_enable = meta.query_advice(header_mark, Rotation::cur());
+            let q_enable = meta.query_advice(header_mark, Rotation::cur());
             let ctrl = meta.query_advice(control, Rotation::prev());
 
-            vec![(s_enable * ctrl, control_step_range)]
+            vec![(q_enable * ctrl, control_step_range)]
         });
 
         meta.create_gate("hash index constrain", |meta| {
-            let s_enable = meta.query_selector(s_table);
+            let q_enable = meta.query_fixed(q_enable, Rotation::cur());
             let s_continue_hash = meta.query_advice(s_sponge_continue, Rotation::cur());
             let hash_ind = meta.query_advice(hash_index, Rotation::cur());
             let hash_prev = meta.query_advice(hash_index, Rotation::prev());
             let hash_out = meta.query_advice(hash_out, Rotation::prev());
 
             vec![
-                s_enable.clone() * s_continue_hash.clone() * (hash_ind - hash_prev.clone()),
-                s_enable
-                    * (Expression::Constant(Fp::one()) - s_continue_hash)
+                q_enable.clone() * s_continue_hash.clone() * (hash_ind - hash_prev.clone()),
+                q_enable
+                    * (Expression::Constant(F::one()) - s_continue_hash)
                     * (hash_out - hash_prev),
             ]
         });
 
         meta.create_gate("input constrain", |meta| {
-            let s_enable = meta.query_selector(s_table);
+            let q_enable = meta.query_fixed(q_enable, Rotation::cur());
             let s_continue_hash = meta.query_advice(s_sponge_continue, Rotation::cur());
 
             // external input: if not new hash, input must add prev state
@@ -267,7 +267,7 @@ impl<Fp: Hashable, PC: PermuteChip<Fp, Fp::SpecType, 3, 2>> SpongeConfig<Fp, PC>
                     let prev_inp = meta.query_advice(*prev_inp, Rotation::prev());
                     let ext_inp = meta.query_advice(*ext_inp, Rotation::cur());
 
-                    s_enable.clone() * (prev_inp * s_continue_hash.clone() + ext_inp - inp)
+                    q_enable.clone() * (prev_inp * s_continue_hash.clone() + ext_inp - inp)
                 })
                 .collect();
 
@@ -279,11 +279,11 @@ impl<Fp: Hashable, PC: PermuteChip<Fp, Fp::SpecType, 3, 2>> SpongeConfig<Fp, PC>
 
             // hash output: must inherit prev state or apply current control flag (for new hash)
             ret.push(
-                s_enable.clone()
-                    * (Expression::Constant(Fp::one()) - s_continue_hash.clone())
+                q_enable.clone()
+                    * (Expression::Constant(F::one()) - s_continue_hash.clone())
                     * (inp_hash.clone() - inp_hash_init),
             );
-            ret.push(s_enable * s_continue_hash * (inp_hash - inp_hash_prev));
+            ret.push(q_enable * s_continue_hash * (inp_hash - inp_hash_prev));
             ret
         });
 
@@ -293,7 +293,7 @@ impl<Fp: Hashable, PC: PermuteChip<Fp, Fp::SpecType, 3, 2>> SpongeConfig<Fp, PC>
             hash_table_aux,
             control_aux,
             control_step_range,
-            s_table,
+            q_enable,
             s_custom,
             s_sponge_continue,
             step,
@@ -303,27 +303,24 @@ impl<Fp: Hashable, PC: PermuteChip<Fp, Fp::SpecType, 3, 2>> SpongeConfig<Fp, PC>
 
 /// Poseidon hash table
 #[derive(Clone, Default, Debug)]
-pub struct PoseidonHashTable<Fp> {
+pub struct PoseidonHashTable<F> {
     /// the input messages for hashes
-    pub inputs: Vec<[Fp; 2]>,
+    pub inputs: Vec<[F; 2]>,
     /// the control flag for each permutation
     pub controls: Vec<u64>,
     /// the expected hash output for checking
-    pub checks: Vec<Option<Fp>>,
+    pub checks: Vec<Option<F>>,
 }
 
-impl<Fp: FieldExt> PoseidonHashTable<Fp> {
+impl<F: FieldExt> PoseidonHashTable<F> {
     /// Add common inputs
-    pub fn constant_inputs<'d>(&mut self, src: impl IntoIterator<Item = &'d [Fp; 2]>) {
+    pub fn constant_inputs<'d>(&mut self, src: impl IntoIterator<Item = &'d [F; 2]>) {
         let mut new_inps: Vec<_> = src.into_iter().copied().collect();
         self.inputs.append(&mut new_inps);
     }
 
     /// Add common inputs with expected hash as check
-    pub fn constant_inputs_with_check<'d>(
-        &mut self,
-        src: impl IntoIterator<Item = &'d (Fp, Fp, Fp)>,
-    ) {
+    pub fn constant_inputs_with_check<'d>(&mut self, src: impl IntoIterator<Item = &'d (F, F, F)>) {
         // align input and checks
         self.checks.resize(self.inputs.len(), None);
 
@@ -337,7 +334,7 @@ impl<Fp: FieldExt> PoseidonHashTable<Fp> {
     /// Add a series of inputs from a field stream
     pub fn stream_inputs<'d>(
         &mut self,
-        src: impl IntoIterator<Item = &'d [Fp; 2]>,
+        src: impl IntoIterator<Item = &'d [F; 2]>,
         ctrl_start: u64,
         step: usize,
     ) {
@@ -347,8 +344,8 @@ impl<Fp: FieldExt> PoseidonHashTable<Fp> {
     /// Add a series of inputs from a field stream with checking of the final hash
     pub fn stream_inputs_with_check<'d>(
         &mut self,
-        src: impl IntoIterator<Item = &'d [Fp; 2]>,
-        check: Option<Fp>,
+        src: impl IntoIterator<Item = &'d [F; 2]>,
+        check: Option<F>,
         ctrl_start: u64,
         step: usize,
     ) {
@@ -379,32 +376,32 @@ impl<Fp: FieldExt> PoseidonHashTable<Fp> {
     }
 }
 
-impl<Fp: Hashable> PoseidonHashTable<Fp> {
+impl<F: Hashable> PoseidonHashTable<F> {
     /// return minimum required the circuit rows\
     /// (size of hashes * rows required by each hash)
     pub fn minimum_row_require(&self) -> usize {
-        self.inputs.len() * Fp::hash_block_size()
+        self.inputs.len() * F::hash_block_size()
     }
 }
 
 /// Represent the chip for Poseidon hash table
 #[derive(Debug)]
-pub struct SpongeChip<'d, Fp: FieldExt, const STEP: usize, PC: Chip<Fp> + Clone + DebugT> {
+pub struct SpongeChip<'d, F: FieldExt, const STEP: usize, PC: Chip<F> + Clone + DebugT> {
     calcs: usize,
-    data: &'d PoseidonHashTable<Fp>,
-    config: SpongeConfig<Fp, PC>,
+    data: &'d PoseidonHashTable<F>,
+    config: SpongeConfig<F, PC>,
 }
 
 type PermutedState<Word> = Vec<[Word; 3]>;
 type PermutedStatePair<Word> = (PermutedState<Word>, PermutedState<Word>);
 
-impl<'d, Fp: Hashable, const STEP: usize, PC: PermuteChip<Fp, Fp::SpecType, 3, 2>>
-    SpongeChip<'d, Fp, STEP, PC>
+impl<'d, F: Hashable, const STEP: usize, PC: PermuteChip<F, F::SpecType, 3, 2>>
+    SpongeChip<'d, F, STEP, PC>
 {
     ///construct the chip
     pub fn construct(
-        config: SpongeConfig<Fp, PC>,
-        data: &'d PoseidonHashTable<Fp>,
+        config: SpongeConfig<F, PC>,
+        data: &'d PoseidonHashTable<F>,
         calcs: usize,
     ) -> Self {
         Self {
@@ -414,7 +411,7 @@ impl<'d, Fp: Hashable, const STEP: usize, PC: PermuteChip<Fp, Fp::SpecType, 3, 2
         }
     }
 
-    fn fill_hash_tbl_custom(&self, region: &mut Region<'_, Fp>) -> Result<usize, Error> {
+    fn fill_hash_tbl_custom(&self, region: &mut Region<'_, F>) -> Result<usize, Error> {
         let config = &self.config;
 
         config.s_custom.enable(region, 0)?;
@@ -429,7 +426,7 @@ impl<'d, Fp: Hashable, const STEP: usize, PC: PermuteChip<Fp, Fp::SpecType, 3, 2
             ),
         ] {
             for col in cols {
-                region.assign_advice(|| tip, *col, 0, || Value::known(Fp::zero()))?;
+                region.assign_advice(|| tip, *col, 0, || Value::known(F::zero()))?;
             }
         }
 
@@ -438,7 +435,7 @@ impl<'d, Fp: Hashable, const STEP: usize, PC: PermuteChip<Fp, Fp::SpecType, 3, 2
 
     fn fill_hash_tbl_body(
         &self,
-        region: &mut Region<'_, Fp>,
+        region: &mut Region<'_, F>,
         begin_offset: usize,
     ) -> Result<PermutedStatePair<PC::Word>, Error> {
         let config = &self.config;
@@ -446,7 +443,7 @@ impl<'d, Fp: Hashable, const STEP: usize, PC: PermuteChip<Fp, Fp::SpecType, 3, 2
 
         let mut states_in = Vec::new();
         let mut states_out = Vec::new();
-        let hash_helper = Fp::hasher();
+        let hash_helper = F::hasher();
 
         let inputs_i = data
             .inputs
@@ -470,7 +467,7 @@ impl<'d, Fp: Hashable, const STEP: usize, PC: PermuteChip<Fp, Fp::SpecType, 3, 2
 
         let mut is_new_sponge = true;
         let mut process_start = 0;
-        let mut state: [Fp; 3] = [Fp::zero(); 3];
+        let mut state: [F; 3] = [F::zero(); 3];
         let mut last_offset = 0;
 
         for (i, ((inp, control), check)) in inputs_i.zip(controls_i).zip(checks_i).enumerate() {
@@ -478,7 +475,7 @@ impl<'d, Fp: Hashable, const STEP: usize, PC: PermuteChip<Fp, Fp::SpecType, 3, 2
             let offset = i + begin_offset;
             last_offset = offset;
 
-            let control_as_flag = Fp::from_u128(control as u128 * HASHABLE_DOMAIN_SPEC);
+            let control_as_flag = F::from_u128(control as u128 * HASHABLE_DOMAIN_SPEC);
 
             if is_new_sponge {
                 state[0] = control_as_flag;
@@ -487,7 +484,7 @@ impl<'d, Fp: Hashable, const STEP: usize, PC: PermuteChip<Fp, Fp::SpecType, 3, 2
 
             let inp = inp
                 .map(|[a, b]| [*a, *b])
-                .unwrap_or_else(|| [Fp::zero(), Fp::zero()]);
+                .unwrap_or_else(|| [F::zero(), F::zero()]);
 
             state.iter_mut().skip(1).zip(inp).for_each(|(s, inp)| {
                 if is_new_sponge {
@@ -511,7 +508,12 @@ impl<'d, Fp: Hashable, const STEP: usize, PC: PermuteChip<Fp, Fp::SpecType, 3, 2
             let current_hash = state[0];
 
             //assignment ...
-            config.s_table.enable(region, offset)?;
+            region.assign_fixed(
+                || "assign q_enable",
+                self.config.q_enable,
+                offset,
+                || Value::known(F::one()),
+            )?;
 
             let c_start = [0; 3]
                 .into_iter()
@@ -546,17 +548,17 @@ impl<'d, Fp: Hashable, const STEP: usize, PC: PermuteChip<Fp, Fp::SpecType, 3, 2
                 (
                     "state beginning flag",
                     config.hash_table[4],
-                    if is_new_sponge { Fp::one() } else { Fp::zero() },
+                    if is_new_sponge { F::one() } else { F::zero() },
                 ),
                 (
                     "state input control_aux",
                     config.control_aux,
-                    control_as_flag.invert().unwrap_or_else(Fp::zero),
+                    control_as_flag.invert().unwrap_or_else(F::zero),
                 ),
                 (
                     "state continue control",
                     config.s_sponge_continue,
-                    if is_new_sponge { Fp::zero() } else { Fp::one() },
+                    if is_new_sponge { F::zero() } else { F::one() },
                 ),
             ] {
                 region.assign_advice(
@@ -597,7 +599,7 @@ impl<'d, Fp: Hashable, const STEP: usize, PC: PermuteChip<Fp, Fp::SpecType, 3, 2
     }
 
     /// load the table into circuit under the specified config
-    pub fn load(&self, layouter: &mut impl Layouter<Fp>) -> Result<(), Error> {
+    pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         let config = &self.config;
 
         layouter.assign_table(
@@ -609,7 +611,7 @@ impl<'d, Fp: Hashable, const STEP: usize, PC: PermuteChip<Fp, Fp::SpecType, 3, 2
                             || "STEP range check",
                             config.control_step_range,
                             i,
-                            || Value::known(Fp::from_u128(i as u128 * HASHABLE_DOMAIN_SPEC)),
+                            || Value::known(F::from_u128(i as u128 * HASHABLE_DOMAIN_SPEC)),
                         )
                         .map(|_| ())
                 })
@@ -628,7 +630,7 @@ impl<'d, Fp: Hashable, const STEP: usize, PC: PermuteChip<Fp, Fp::SpecType, 3, 2
         for state in states_in {
             let chip = PC::construct(config.permute_config.clone());
 
-            let final_state = <PC as PoseidonInstructions<Fp, Fp::SpecType, 3, 2>>::permute(
+            let final_state = <PC as PoseidonInstructions<F, F::SpecType, 3, 2>>::permute(
                 &chip, layouter, &state,
             )?;
 
@@ -640,8 +642,8 @@ impl<'d, Fp: Hashable, const STEP: usize, PC: PermuteChip<Fp, Fp::SpecType, 3, 2
             |mut region| {
                 for (state, final_state) in states_out.iter().zip(chip_finals.iter()) {
                     for (s_cell, final_cell) in state.iter().zip(final_state.iter()) {
-                        let s_cell: AssignedCell<Fp, Fp> = s_cell.clone().into();
-                        let final_cell: AssignedCell<Fp, Fp> = final_cell.clone().into();
+                        let s_cell: AssignedCell<F, F> = s_cell.clone().into();
+                        let final_cell: AssignedCell<F, F> = final_cell.clone().into();
                         region.constrain_equal(s_cell.cell(), final_cell.cell())?;
                     }
                 }
@@ -652,11 +654,11 @@ impl<'d, Fp: Hashable, const STEP: usize, PC: PermuteChip<Fp, Fp::SpecType, 3, 2
     }
 }
 
-impl<Fp: FieldExt, const STEP: usize, PC: Chip<Fp> + Clone + DebugT> Chip<Fp>
-    for SpongeChip<'_, Fp, STEP, PC>
+impl<F: FieldExt, const STEP: usize, PC: Chip<F> + Clone + DebugT> Chip<F>
+    for SpongeChip<'_, F, STEP, PC>
 {
-    type Config = SpongeConfig<Fp, PC>;
-    type Loaded = PoseidonHashTable<Fp>;
+    type Config = SpongeConfig<F, PC>;
+    type Loaded = PoseidonHashTable<F>;
 
     fn config(&self) -> &Self::Config {
         &self.config
@@ -748,8 +750,12 @@ mod tests {
         }
 
         fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
+            let q_enable = meta.fixed_column();
             let hash_tbl = [0; 5].map(|_| meta.advice_column());
-            (SpongeConfig::configure_sub(meta, hash_tbl, TEST_STEP), 4)
+            (
+                SpongeConfig::configure_sub(meta, (q_enable, hash_tbl), TEST_STEP),
+                4,
+            )
         }
 
         fn synthesize(
