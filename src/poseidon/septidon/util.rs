@@ -41,7 +41,7 @@ pub fn split_values<F: FieldExt>(values: Value<[F; 3]>) -> [Value<F>; 3] {
     ]
 }
 
-pub mod pow_5 {
+pub(crate) mod pow_5 {
     use super::FieldExt;
     use halo2_proofs::plonk::Expression;
 
@@ -57,7 +57,7 @@ pub mod pow_5 {
 }
 
 /// Matrix multiplication expressions and values.
-pub mod matmul {
+pub(crate) mod matmul {
     use super::super::params::Mds;
     use super::FieldExt;
     use halo2_proofs::plonk::Expression;

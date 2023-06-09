@@ -1,7 +1,7 @@
 use super::params;
-use super::params::{mds, round_constant, CachedConstants};
+use super::params::{calc::matmul, round_constant, CachedConstants};
 use super::state::Cell;
-use super::util::{join_values, matmul, split_values};
+use super::util::{join_values, split_values};
 use halo2_proofs::circuit::{Region, Value};
 //use halo2_proofs::halo2curves::bn256::Fr as F;
 use halo2_proofs::plonk::{Advice, Column, ConstraintSystem, Constraints, Error, Expression};
@@ -58,11 +58,11 @@ impl TransitionRoundChip {
     ) -> [Expression<F>; 3] {
         let rc = Expression::Constant(Self::round_constant());
         let sbox_out = [
-            params::sbox::expr(input[0].clone(), rc),
+            params::calc::sbox::expr(input[0].clone(), rc),
             input[1].clone(),
             input[2].clone(),
         ];
-        matmul::expr(mds(), sbox_out)
+        matmul::expr(sbox_out)
     }
 
     fn round_constant<F: CachedConstants>() -> F {
@@ -102,11 +102,11 @@ impl TransitionRoundChip {
 
     fn first_partial_round<F: CachedConstants>(input: &[Value<F>; 3]) -> [Value<F>; 3] {
         let sbox_out = [
-            input[0].map(|f| params::sbox::value(f, Self::round_constant())),
+            input[0].map(|f| params::calc::sbox::value(f, Self::round_constant())),
             input[1],
             input[2],
         ];
-        let output = join_values(sbox_out).map(|s| matmul::value(mds(), s));
+        let output = join_values(sbox_out).map(|s| matmul::value(s));
         split_values(output)
     }
 
