@@ -652,11 +652,14 @@ impl<'d, F: Hashable, const STEP: usize, PC: PermuteChip<F, F::SpecType, 3, 2>>
             },
         )?;
 
+        layouter.assign_region(|| "hash table custom", |mut region| {
+            self.fill_hash_tbl_custom(&mut region)
+        })?;
+
         let (states_in, states_out) = layouter.assign_region(
             || "hash table",
             |mut region| {
-                let offset = self.fill_hash_tbl_custom(&mut region)?;
-                self.fill_hash_tbl_body(&mut region, offset)
+                self.fill_hash_tbl_body(&mut region, 0)
             },
         )?;
 
