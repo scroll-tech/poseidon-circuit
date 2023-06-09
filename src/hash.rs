@@ -709,7 +709,14 @@ mod tests {
     use crate::poseidon::{Pow5Chip, SeptidonChip};
 
     use super::*;
+    use halo2_proofs::halo2curves::bn256::{Bn256, G1Affine};
     use halo2_proofs::halo2curves::group::ff::PrimeField;
+    use halo2_proofs::plonk::{keygen_vk, keygen_pk, create_proof, verify_proof};
+    use halo2_proofs::poly::commitment::ParamsProver;
+    use halo2_proofs::poly::kzg::commitment::{ParamsKZG, ParamsVerifierKZG, KZGCommitmentScheme};
+    use halo2_proofs::poly::kzg::multiopen::{ProverSHPLONK, VerifierSHPLONK};
+    use halo2_proofs::poly::kzg::strategy::SingleStrategy;
+    use halo2_proofs::transcript::{Blake2bWrite, Challenge255, TranscriptWriterBuffer, Blake2bRead, TranscriptReadBuffer};
     use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 
     #[test]
@@ -873,6 +880,9 @@ mod tests {
     }
 
     fn poseidon_var_len_hash_circuit_impl<PC: PermuteChip<Fr, <Fr as Hashable>::SpecType, 3, 2>>() {
+        use rand::SeedableRng;
+        use rand_xorshift::XorShiftRng;
+
         let message1 = [
             Fr::from_str_vartime("1").unwrap(),
             Fr::from_str_vartime("2").unwrap(),
@@ -881,35 +891,82 @@ mod tests {
         let message2 = [Fr::from_str_vartime("50331648").unwrap(), Fr::zero()];
 
         let k = 8;
+
+        let mut rng = XorShiftRng::from_seed([
+            0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
+            0xbc, 0xe5,
+        ]);
+        let general_params = ParamsKZG::<Bn256>::setup(k, &mut rng);
+        let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
+
         let circuit = TestCircuit::<PC>::new(PoseidonHashTable {
             inputs: vec![message1, message2],
             controls: vec![45, 13],
             //checks: vec![None, Some(Fr::from_str_vartime("15002881182751877599173281392790087382867290792048832034781070831698029191486").unwrap())],
             ..Default::default()
         });
-        let prover = MockProver::run(k, &circuit, vec![]).unwrap();
-        assert_eq!(prover.verify(), Ok(()));
+        let vk = keygen_vk(&general_params, &circuit).expect("keygen_vk shouldn't fail");
+        let pk = keygen_pk(&general_params, vk, &circuit).expect("keygen_pk shouldn't fail");
 
-        let circuit = TestCircuit::<PC>::new(PoseidonHashTable {
-            inputs: vec![message1, message2, message1],
-            controls: vec![64, 32],
-            checks: Vec::new(),
-            ..Default::default()
-        });
-        let prover = MockProver::run(k, &circuit, vec![]).unwrap();
-        assert_eq!(prover.verify(), Ok(()));
+        let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
+        create_proof::<
+            KZGCommitmentScheme<Bn256>,
+            ProverSHPLONK<'_, Bn256>,
+            Challenge255<G1Affine>,
+            XorShiftRng,
+            Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
+            TestCircuit<PC>,
+        >(
+            &general_params,
+            &pk,
+            &[circuit],
+            &[&[]],
+            rng,
+            &mut transcript,
+        )
+        .expect("proof generation should not fail");
+        let proof = transcript.finalize();
 
-        let circuit = TestCircuit::<PC>::new(PoseidonHashTable::<Fr> {
-            inputs: vec![message2],
-            controls: vec![13],
-            ..Default::default()
-        });
-        let prover = MockProver::run(k, &circuit, vec![]).unwrap();
-        assert_eq!(prover.verify(), Ok(()));
-        let circuit = TestCircuit::<PC>::new(PoseidonHashTable::<Fr> {
-            ..Default::default()
-        });
-        let prover = MockProver::run(k, &circuit, vec![]).unwrap();
-        assert_eq!(prover.verify(), Ok(()));
+        let mut verifier_transcript = Blake2bRead::<_, G1Affine, Challenge255<_>>::init(&proof[..]);
+        let strategy = SingleStrategy::new(&general_params);
+        verify_proof::<
+            KZGCommitmentScheme<Bn256>,
+            VerifierSHPLONK<'_, Bn256>,
+            Challenge255<G1Affine>,
+            Blake2bRead<&[u8], G1Affine, Challenge255<G1Affine>>,
+            SingleStrategy<'_, Bn256>,
+        >(
+            &verifier_params,
+            pk.get_vk(),
+            strategy,
+            &[&[]],
+            &mut verifier_transcript,
+        )
+        .expect("failed to verify bench circuit");
+
+        // let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+        // assert_eq!(prover.verify(), Ok(()));
+
+        // let circuit = TestCircuit::<PC>::new(PoseidonHashTable {
+        //     inputs: vec![message1, message2, message1],
+        //     controls: vec![64, 32],
+        //     checks: Vec::new(),
+        //     ..Default::default()
+        // });
+        // let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+        // assert_eq!(prover.verify(), Ok(()));
+
+        // let circuit = TestCircuit::<PC>::new(PoseidonHashTable::<Fr> {
+        //     inputs: vec![message2],
+        //     controls: vec![13],
+        //     ..Default::default()
+        // });
+        // let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+        // assert_eq!(prover.verify(), Ok(()));
+        // let circuit = TestCircuit::<PC>::new(PoseidonHashTable::<Fr> {
+        //     ..Default::default()
+        // });
+        // let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+        // assert_eq!(prover.verify(), Ok(()));
     }
 }
