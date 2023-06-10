@@ -374,7 +374,10 @@ impl<F: Hashable> PoseidonHashTable<F> {
 
 /// Represent the chip for Poseidon hash table
 #[derive(Debug)]
-pub struct SpongeChip<'d, F: FieldExt, const STEP: usize, PC: Chip<F> + Clone + DebugT> {
+pub struct SpongeChip<'d, F: FieldExt, const STEP: usize, PC: Chip<F> + Clone + DebugT>
+where
+    PC::Config: Sync,
+{
     calcs: usize,
     nil_msg_hash: Option<F>,
     mpt_only: bool,
@@ -387,6 +390,8 @@ type PermutedStatePair<Word> = (PermutedState<Word>, PermutedState<Word>);
 
 impl<'d, F: Hashable, const STEP: usize, PC: PermuteChip<F, F::SpecType, 3, 2>>
     SpongeChip<'d, F, STEP, PC>
+where
+    PC::Config: Sync,
 {
     ///construct the chip
     pub fn construct(
@@ -705,6 +710,8 @@ impl<'d, F: Hashable, const STEP: usize, PC: PermuteChip<F, F::SpecType, 3, 2>>
 
 impl<F: FieldExt, const STEP: usize, PC: Chip<F> + Clone + DebugT> Chip<F>
     for SpongeChip<'_, F, STEP, PC>
+where
+    PC::Config: Sync,
 {
     type Config = SpongeConfig<F, PC>;
     type Loaded = PoseidonHashTable<F>;
@@ -799,7 +806,10 @@ mod tests {
         }
     }
 
-    impl<PC: PermuteChip<Fr, <Fr as Hashable>::SpecType, 3, 2>> Circuit<Fr> for TestCircuit<PC> {
+    impl<PC: PermuteChip<Fr, <Fr as Hashable>::SpecType, 3, 2>> Circuit<Fr> for TestCircuit<PC>
+    where
+        PC::Config: Sync,
+    {
         type Config = (SpongeConfig<Fr, PC>, usize);
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -870,7 +880,10 @@ mod tests {
         poseidon_hash_circuit_impl::<SeptidonChip>();
     }
 
-    fn poseidon_hash_circuit_impl<PC: PermuteChip<Fr, <Fr as Hashable>::SpecType, 3, 2>>() {
+    fn poseidon_hash_circuit_impl<PC: PermuteChip<Fr, <Fr as Hashable>::SpecType, 3, 2>>()
+    where
+        PC::Config: Sync,
+    {
         let message1 = [
             Fr::from_str_vartime("1").unwrap(),
             Fr::from_str_vartime("2").unwrap(),
@@ -896,7 +909,10 @@ mod tests {
         poseidon_var_len_hash_circuit_impl::<SeptidonChip>();
     }
 
-    fn poseidon_var_len_hash_circuit_impl<PC: PermuteChip<Fr, <Fr as Hashable>::SpecType, 3, 2>>() {
+    fn poseidon_var_len_hash_circuit_impl<PC: PermuteChip<Fr, <Fr as Hashable>::SpecType, 3, 2>>()
+    where
+        PC::Config: Sync,
+    {
         use rand::SeedableRng;
         use rand_xorshift::XorShiftRng;
 
