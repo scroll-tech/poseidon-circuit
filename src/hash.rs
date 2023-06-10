@@ -474,7 +474,6 @@ impl<'d, F: Hashable, const STEP: usize, PC: PermuteChip<F, F::SpecType, 3, 2>>
         begin_offset: usize,
     ) -> Result<PermutedStatePair<PC::Word>, Error> {
         let config = &self.config;
-
         let mut is_new_sponge = true;
         let mut states_in = Vec::new();
         let mut states_out = Vec::new();
@@ -609,8 +608,7 @@ impl<'d, F: Hashable, const STEP: usize, PC: PermuteChip<F, F::SpecType, 3, 2>>
         &self,
         region: &mut Region<'_, F>,
         begin_offset: usize,
-    ) -> Result<PermutedStatePair<PC::Word>, Error> {
-        let config = &self.config;
+    ) -> Result<Vec<PermutedStatePair<PC::Word>>, Error> {
         let data = self.data;
 
         let inputs_i = data
@@ -635,23 +633,11 @@ impl<'d, F: Hashable, const STEP: usize, PC: PermuteChip<F, F::SpecType, 3, 2>>
 
         let data: Vec<(usize, ((Option<&[F; 2]>, Option<&u64>), Option<&F>))> =
             inputs_i.zip(controls_i).zip(checks_i).enumerate().collect();
-        let data_len = data.len();
         let ret = data
             .group_by(|(_, ((_, control), _)), _| control.copied().unwrap_or(0) > STEP as u64)
             .map(|data| self.fill_hash_tbl_body_sponge(region, data, begin_offset))
             .collect::<Result<Vec<_>, _>>()?;
-
-        let mut states_in = vec![];
-        let mut states_out = vec![];
-        for (s_in, s_out) in ret.into_iter() {
-            states_in.extend(s_in);
-            states_out.extend(s_out);
-        }
-
-        // set the last row is "custom", a row both enabled and customed
-        // can only fill a padding row ([0, 0] in MPT mode)
-        config.s_custom.enable(region, data_len + begin_offset)?;
-        Ok((states_in, states_out))
+        Ok(ret)
     }
 
     /// load the table into circuit under the specified config
@@ -679,10 +665,21 @@ impl<'d, F: Hashable, const STEP: usize, PC: PermuteChip<F, F::SpecType, 3, 2>>
             |mut region| self.fill_hash_tbl_custom(&mut region),
         )?;
 
-        let (states_in, states_out) = layouter.assign_region(
+        let ret = layouter.assign_region(
             || "hash table",
             |mut region| self.fill_hash_tbl_body(&mut region, 0),
         )?;
+        layouter.assign_region(
+            || "enable hash table custom",
+            |mut region| self.config.s_custom.enable(&mut region, self.calcs)
+        )?;
+
+        let mut states_in = vec![];
+        let mut states_out = vec![];
+        for (s_in, s_out) in ret.into_iter() {
+            states_in.extend(s_in);
+            states_out.extend(s_out);
+        }
 
         let mut chip_finals = Vec::new();
         for state in states_in {
