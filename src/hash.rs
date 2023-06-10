@@ -478,7 +478,7 @@ where
         data: &[(usize, ((Option<&[F; 2]>, Option<&u64>), Option<&F>))],
     ) -> Result<PermutedStatePair<PC::Word>, Error> {
         let config = &self.config;
-        let mut is_new_sponge = true;
+        let mut is_beginning = true;
         let mut states_in = Vec::new();
         let mut states_out = Vec::new();
         let hash_helper = F::hasher();
@@ -490,7 +490,7 @@ where
 
             let control_as_flag = F::from_u128(control as u128 * HASHABLE_DOMAIN_SPEC);
 
-            if is_new_sponge {
+            if is_beginning {
                 state[0] = control_as_flag;
                 process_start = *offset;
             }
@@ -500,7 +500,7 @@ where
                 .unwrap_or_else(|| [F::zero(), F::zero()]);
 
             state.iter_mut().skip(1).zip(inp).for_each(|(s, inp)| {
-                if is_new_sponge {
+                if is_beginning {
                     *s = inp;
                 } else {
                     *s += inp;
@@ -517,8 +517,6 @@ where
                     "hash output not match with expected at {offset}"
                 );
             }
-
-            let current_hash = state[0];
 
             //assignment ...
             region.assign_fixed(
@@ -561,7 +559,7 @@ where
                 (
                     "state beginning flag",
                     config.hash_table[4],
-                    if is_new_sponge { F::one() } else { F::zero() },
+                    if is_beginning { F::one() } else { F::zero() },
                 ),
                 (
                     "state input control_aux",
@@ -571,7 +569,7 @@ where
                 (
                     "state continue control",
                     config.s_sponge_continue,
-                    if is_new_sponge { F::zero() } else { F::one() },
+                    if is_beginning { F::zero() } else { F::one() },
                 ),
             ] {
                 region.assign_advice(
@@ -582,28 +580,27 @@ where
                 )?;
             }
 
-            is_new_sponge = control <= STEP as u64;
-
-            //fill all the hash_table[0] with result hash
-            if is_new_sponge {
-                (0..data.len()).try_for_each(|ith| {
-                    region
-                        .assign_advice(
-                            || format!("hash index_{ith}"),
-                            config.hash_table[0],
-                            ith+process_start,
-                            || Value::known(current_hash),
-                        )
-                        .map(|_| ())
-                })?;
-            }
-
             //we directly specify the init state of permutation
             let c_start_arr: [_; 3] = c_start.try_into().expect("same size");
             states_in.push(c_start_arr.map(PC::Word::from));
             let c_end_arr: [_; 3] = c_end.try_into().expect("same size");
             states_out.push(c_end_arr.map(PC::Word::from));
+
+            is_beginning = false;
         }
+
+        //fill all the hash_table[0] with result hash
+        (0..data.len()).try_for_each(|ith| {
+            region
+                .assign_advice(
+                    || format!("hash index_{ith}"),
+                    config.hash_table[0],
+                    ith + process_start,
+                    || Value::known(state[0]),
+                )
+                .map(|_| ())
+        })?;
+
         Ok((states_in, states_out))
     }
 
