@@ -471,7 +471,6 @@ impl<'d, F: Hashable, const STEP: usize, PC: PermuteChip<F, F::SpecType, 3, 2>>
         &self,
         region: &mut Region<'_, F>,
         data: &[(usize, ((Option<&[F; 2]>, Option<&u64>), Option<&F>))],
-        begin_offset: usize,
     ) -> Result<PermutedStatePair<PC::Word>, Error> {
         let config = &self.config;
         let mut is_new_sponge = true;
@@ -481,15 +480,14 @@ impl<'d, F: Hashable, const STEP: usize, PC: PermuteChip<F, F::SpecType, 3, 2>>
         let mut process_start = 0;
         let mut state = [F::zero(); 3];
 
-        for (i, ((inp, control), check)) in data.iter() {
+        for (offset, ((inp, control), check)) in data.iter() {
             let control = control.copied().unwrap_or(0u64);
-            let offset = i + begin_offset;
 
             let control_as_flag = F::from_u128(control as u128 * HASHABLE_DOMAIN_SPEC);
 
             if is_new_sponge {
                 state[0] = control_as_flag;
-                process_start = offset;
+                process_start = *offset;
             }
 
             let inp = inp
@@ -521,7 +519,7 @@ impl<'d, F: Hashable, const STEP: usize, PC: PermuteChip<F, F::SpecType, 3, 2>>
             region.assign_fixed(
                 || "assign q_enable",
                 self.config.q_enable,
-                offset,
+                *offset,
                 || Value::known(F::one()),
             )?;
 
@@ -532,7 +530,7 @@ impl<'d, F: Hashable, const STEP: usize, PC: PermuteChip<F, F::SpecType, 3, 2>>
                     region.assign_advice(
                         || format!("state input {i}_{offset}"),
                         config.hash_table_aux[i],
-                        offset,
+                        *offset,
                         || Value::known(state_start[i]),
                     )
                 })
@@ -545,7 +543,7 @@ impl<'d, F: Hashable, const STEP: usize, PC: PermuteChip<F, F::SpecType, 3, 2>>
                     region.assign_advice(
                         || format!("state output {i}_{offset}"),
                         config.hash_table_aux[j],
-                        offset,
+                        *offset,
                         || Value::known(state[i]),
                     )
                 })
@@ -574,7 +572,7 @@ impl<'d, F: Hashable, const STEP: usize, PC: PermuteChip<F, F::SpecType, 3, 2>>
                 region.assign_advice(
                     || format!("{tip}_{offset}"),
                     col,
-                    offset,
+                    *offset,
                     || Value::known(val),
                 )?;
             }
@@ -583,12 +581,12 @@ impl<'d, F: Hashable, const STEP: usize, PC: PermuteChip<F, F::SpecType, 3, 2>>
 
             //fill all the hash_table[0] with result hash
             if is_new_sponge {
-                (process_start..=offset).try_for_each(|ith| {
+                (0..data.len()).try_for_each(|ith| {
                     region
                         .assign_advice(
                             || format!("hash index_{ith}"),
                             config.hash_table[0],
-                            ith,
+                            ith+process_start,
                             || Value::known(current_hash),
                         )
                         .map(|_| ())
@@ -602,42 +600,6 @@ impl<'d, F: Hashable, const STEP: usize, PC: PermuteChip<F, F::SpecType, 3, 2>>
             states_out.push(c_end_arr.map(PC::Word::from));
         }
         Ok((states_in, states_out))
-    }
-
-    fn fill_hash_tbl_body(
-        &self,
-        region: &mut Region<'_, F>,
-        begin_offset: usize,
-    ) -> Result<Vec<PermutedStatePair<PC::Word>>, Error> {
-        let data = self.data;
-
-        let inputs_i = data
-            .inputs
-            .iter()
-            .map(Some)
-            .chain(std::iter::repeat(None))
-            .take(self.calcs);
-        let controls_i = data
-            .controls
-            .iter()
-            .map(Some)
-            .chain(std::iter::repeat(None))
-            .take(self.calcs);
-
-        let checks_i = data
-            .checks
-            .iter()
-            .map(|i| i.as_ref())
-            .chain(std::iter::repeat(None))
-            .take(self.calcs);
-
-        let data: Vec<(usize, ((Option<&[F; 2]>, Option<&u64>), Option<&F>))> =
-            inputs_i.zip(controls_i).zip(checks_i).enumerate().collect();
-        let ret = data
-            .group_by(|(_, ((_, control), _)), _| control.copied().unwrap_or(0) > STEP as u64)
-            .map(|data| self.fill_hash_tbl_body_sponge(region, data, begin_offset))
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(ret)
     }
 
     /// load the table into circuit under the specified config
@@ -665,13 +627,43 @@ impl<'d, F: Hashable, const STEP: usize, PC: PermuteChip<F, F::SpecType, 3, 2>>
             |mut region| self.fill_hash_tbl_custom(&mut region),
         )?;
 
-        let ret = layouter.assign_region(
-            || "hash table",
-            |mut region| self.fill_hash_tbl_body(&mut region, 0),
-        )?;
+        let data = self.data;
+
+        let inputs_i = data
+            .inputs
+            .iter()
+            .map(Some)
+            .chain(std::iter::repeat(None))
+            .take(self.calcs);
+        let controls_i = data
+            .controls
+            .iter()
+            .map(Some)
+            .chain(std::iter::repeat(None))
+            .take(self.calcs);
+
+        let checks_i = data
+            .checks
+            .iter()
+            .map(|i| i.as_ref())
+            .chain(std::iter::repeat(None))
+            .take(self.calcs);
+
+        let data: Vec<(usize, ((Option<&[F; 2]>, Option<&u64>), Option<&F>))> =
+            inputs_i.zip(controls_i).zip(checks_i).enumerate().collect();
+        let assignments = data
+            .group_by(|(_, ((_, control), _)), _| control.copied().unwrap_or(0) > STEP as u64)
+            .map(|data| {
+                |mut region: Region<'_, F>| -> Result<PermutedStatePair<PC::Word>, Error> {
+                    self.fill_hash_tbl_body_sponge(&mut region, data)
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let ret = layouter.assign_regions(|| "hash table", assignments)?;
         layouter.assign_region(
             || "enable hash table custom",
-            |mut region| self.config.s_custom.enable(&mut region, self.calcs)
+            |mut region| self.config.s_custom.enable(&mut region, self.calcs),
         )?;
 
         let mut states_in = vec![];
