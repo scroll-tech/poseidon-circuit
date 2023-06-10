@@ -45,7 +45,7 @@ pub trait PoseidonInstructions<F: FieldExt, S: Spec<F, T, RATE>, const T: usize,
     Chip<F>
 {
     /// Variable representing the word over which the Poseidon permutation operates.
-    type Word: Clone + fmt::Debug + From<AssignedCell<F, F>> + Into<AssignedCell<F, F>>;
+    type Word: Clone + fmt::Debug + From<AssignedCell<F, F>> + Into<AssignedCell<F, F>> + Sync;
 
     /// Applies the Poseidon permutation to the given state.
     fn permute(
