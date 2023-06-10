@@ -467,6 +467,144 @@ impl<'d, F: Hashable, const STEP: usize, PC: PermuteChip<F, F::SpecType, 3, 2>>
         Ok(2)
     }
 
+    fn fill_hash_tbl_body_sponge(
+        &self,
+        region: &mut Region<'_, F>,
+        data: &[(usize, ((Option<&[F; 2]>, Option<&u64>), Option<&F>))],
+        begin_offset: usize,
+    ) -> Result<PermutedStatePair<PC::Word>, Error> {
+        let config = &self.config;
+
+        let mut is_new_sponge = true;
+        let mut states_in = Vec::new();
+        let mut states_out = Vec::new();
+        let hash_helper = F::hasher();
+        let mut process_start = 0;
+        let mut state = [F::zero(); 3];
+
+        for (i, ((inp, control), check)) in data.iter() {
+            let control = control.copied().unwrap_or(0u64);
+            let offset = i + begin_offset;
+
+            let control_as_flag = F::from_u128(control as u128 * HASHABLE_DOMAIN_SPEC);
+
+            if is_new_sponge {
+                state[0] = control_as_flag;
+                process_start = offset;
+            }
+
+            let inp = inp
+                .map(|[a, b]| [*a, *b])
+                .unwrap_or_else(|| [F::zero(), F::zero()]);
+
+            state.iter_mut().skip(1).zip(inp).for_each(|(s, inp)| {
+                if is_new_sponge {
+                    *s = inp;
+                } else {
+                    *s += inp;
+                }
+            });
+
+            let state_start = state;
+            hash_helper.permute(&mut state); //here we calculate the hash
+
+            //and sanity check ...
+            if let Some(ck) = check {
+                assert_eq!(
+                    **ck, state[0],
+                    "hash output not match with expected at {offset}"
+                );
+            }
+
+            let current_hash = state[0];
+
+            //assignment ...
+            region.assign_fixed(
+                || "assign q_enable",
+                self.config.q_enable,
+                offset,
+                || Value::known(F::one()),
+            )?;
+
+            let c_start = [0; 3]
+                .into_iter()
+                .enumerate()
+                .map(|(i, _)| {
+                    region.assign_advice(
+                        || format!("state input {i}_{offset}"),
+                        config.hash_table_aux[i],
+                        offset,
+                        || Value::known(state_start[i]),
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+
+            let c_end = [5, 3, 4]
+                .into_iter()
+                .enumerate()
+                .map(|(i, j)| {
+                    region.assign_advice(
+                        || format!("state output {i}_{offset}"),
+                        config.hash_table_aux[j],
+                        offset,
+                        || Value::known(state[i]),
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+
+            for (tip, col, val) in [
+                ("hash input first", config.hash_table[1], inp[0]),
+                ("hash input second", config.hash_table[2], inp[1]),
+                ("state input control", config.hash_table[3], control_as_flag),
+                (
+                    "state beginning flag",
+                    config.hash_table[4],
+                    if is_new_sponge { F::one() } else { F::zero() },
+                ),
+                (
+                    "state input control_aux",
+                    config.control_aux,
+                    control_as_flag.invert().unwrap_or_else(F::zero),
+                ),
+                (
+                    "state continue control",
+                    config.s_sponge_continue,
+                    if is_new_sponge { F::zero() } else { F::one() },
+                ),
+            ] {
+                region.assign_advice(
+                    || format!("{tip}_{offset}"),
+                    col,
+                    offset,
+                    || Value::known(val),
+                )?;
+            }
+
+            is_new_sponge = control <= STEP as u64;
+
+            //fill all the hash_table[0] with result hash
+            if is_new_sponge {
+                (process_start..=offset).try_for_each(|ith| {
+                    region
+                        .assign_advice(
+                            || format!("hash index_{ith}"),
+                            config.hash_table[0],
+                            ith,
+                            || Value::known(current_hash),
+                        )
+                        .map(|_| ())
+                })?;
+            }
+
+            //we directly specify the init state of permutation
+            let c_start_arr: [_; 3] = c_start.try_into().expect("same size");
+            states_in.push(c_start_arr.map(PC::Word::from));
+            let c_end_arr: [_; 3] = c_end.try_into().expect("same size");
+            states_out.push(c_end_arr.map(PC::Word::from));
+        }
+        Ok((states_in, states_out))
+    }
+
     fn fill_hash_tbl_body(
         &self,
         region: &mut Region<'_, F>,
@@ -500,136 +638,7 @@ impl<'d, F: Hashable, const STEP: usize, PC: PermuteChip<F, F::SpecType, 3, 2>>
         let data_len = data.len();
         let ret = data
             .group_by(|(_, ((_, control), _)), _| control.copied().unwrap_or(0) > STEP as u64)
-            .map(|data| -> Result<PermutedStatePair<PC::Word>, Error> {
-                let mut is_new_sponge = true;
-                let mut states_in = Vec::new();
-                let mut states_out = Vec::new();
-                let hash_helper = F::hasher();
-                let mut process_start = 0;
-                let mut state = [F::zero(); 3];
-
-                for (i, ((inp, control), check)) in data.iter() {
-                    let control = control.copied().unwrap_or(0u64);
-                    let offset = i + begin_offset;
-
-                    let control_as_flag = F::from_u128(control as u128 * HASHABLE_DOMAIN_SPEC);
-
-                    if is_new_sponge {
-                        state[0] = control_as_flag;
-                        process_start = offset;
-                    }
-
-                    let inp = inp
-                        .map(|[a, b]| [*a, *b])
-                        .unwrap_or_else(|| [F::zero(), F::zero()]);
-
-                    state.iter_mut().skip(1).zip(inp).for_each(|(s, inp)| {
-                        if is_new_sponge {
-                            *s = inp;
-                        } else {
-                            *s += inp;
-                        }
-                    });
-
-                    let state_start = state;
-                    hash_helper.permute(&mut state); //here we calculate the hash
-
-                    //and sanity check ...
-                    if let Some(ck) = check {
-                        assert_eq!(
-                            **ck, state[0],
-                            "hash output not match with expected at {offset}"
-                        );
-                    }
-
-                    let current_hash = state[0];
-
-                    //assignment ...
-                    region.assign_fixed(
-                        || "assign q_enable",
-                        self.config.q_enable,
-                        offset,
-                        || Value::known(F::one()),
-                    )?;
-
-                    let c_start = [0; 3]
-                        .into_iter()
-                        .enumerate()
-                        .map(|(i, _)| {
-                            region.assign_advice(
-                                || format!("state input {i}_{offset}"),
-                                config.hash_table_aux[i],
-                                offset,
-                                || Value::known(state_start[i]),
-                            )
-                        })
-                        .collect::<Result<Vec<_>, _>>()?;
-
-                    let c_end = [5, 3, 4]
-                        .into_iter()
-                        .enumerate()
-                        .map(|(i, j)| {
-                            region.assign_advice(
-                                || format!("state output {i}_{offset}"),
-                                config.hash_table_aux[j],
-                                offset,
-                                || Value::known(state[i]),
-                            )
-                        })
-                        .collect::<Result<Vec<_>, _>>()?;
-
-                    for (tip, col, val) in [
-                        ("hash input first", config.hash_table[1], inp[0]),
-                        ("hash input second", config.hash_table[2], inp[1]),
-                        ("state input control", config.hash_table[3], control_as_flag),
-                        (
-                            "state beginning flag",
-                            config.hash_table[4],
-                            if is_new_sponge { F::one() } else { F::zero() },
-                        ),
-                        (
-                            "state input control_aux",
-                            config.control_aux,
-                            control_as_flag.invert().unwrap_or_else(F::zero),
-                        ),
-                        (
-                            "state continue control",
-                            config.s_sponge_continue,
-                            if is_new_sponge { F::zero() } else { F::one() },
-                        ),
-                    ] {
-                        region.assign_advice(
-                            || format!("{tip}_{offset}"),
-                            col,
-                            offset,
-                            || Value::known(val),
-                        )?;
-                    }
-
-                    is_new_sponge = control <= STEP as u64;
-
-                    //fill all the hash_table[0] with result hash
-                    if is_new_sponge {
-                        (process_start..=offset).try_for_each(|ith| {
-                            region
-                                .assign_advice(
-                                    || format!("hash index_{ith}"),
-                                    config.hash_table[0],
-                                    ith,
-                                    || Value::known(current_hash),
-                                )
-                                .map(|_| ())
-                        })?;
-                    }
-
-                    //we directly specify the init state of permutation
-                    let c_start_arr: [_; 3] = c_start.try_into().expect("same size");
-                    states_in.push(c_start_arr.map(PC::Word::from));
-                    let c_end_arr: [_; 3] = c_end.try_into().expect("same size");
-                    states_out.push(c_end_arr.map(PC::Word::from));
-                }
-                Ok((states_in, states_out))
-            })
+            .map(|data| self.fill_hash_tbl_body_sponge(region, data, begin_offset))
             .collect::<Result<Vec<_>, _>>()?;
 
         let mut states_in = vec![];
