@@ -410,6 +410,171 @@ where
         }
     }
 
+    fn fill_hash_tbl_body(
+        &self,
+        region: &mut Region<'_, F>,
+        begin_offset: usize,
+    ) -> Result<PermutedStatePair<PC::Word>, Error> {
+        let config = &self.config;
+        let data = self.data;
+
+        let mut states_in = Vec::new();
+        let mut states_out = Vec::new();
+        let hash_helper = F::hasher();
+
+        let inputs_i = data
+            .inputs
+            .iter()
+            .map(Some)
+            .chain(std::iter::repeat(None))
+            .take(self.calcs);
+        let controls_i = data
+            .controls
+            .iter()
+            .map(Some)
+            .chain(std::iter::repeat(None))
+            .take(self.calcs);
+
+        let checks_i = data
+            .checks
+            .iter()
+            .map(|i| i.as_ref())
+            .chain(std::iter::repeat(None))
+            .take(self.calcs);
+
+        let mut is_new_sponge = true;
+        let mut process_start = 0;
+        let mut state: [F; 3] = [F::zero(); 3];
+        let mut last_offset = 0;
+
+        for (i, ((inp, control), check)) in inputs_i.zip(controls_i).zip(checks_i).enumerate() {
+            let control = control.copied().unwrap_or(0);
+            let offset = i + begin_offset;
+            last_offset = offset;
+
+            let control_as_flag = F::from_u128(control as u128 * HASHABLE_DOMAIN_SPEC);
+
+            if is_new_sponge {
+                state[0] = control_as_flag;
+                process_start = offset;
+            }
+
+            let inp = inp
+                .map(|[a, b]| [*a, *b])
+                .unwrap_or_else(|| [F::zero(), F::zero()]);
+
+            state.iter_mut().skip(1).zip(inp).for_each(|(s, inp)| {
+                if is_new_sponge {
+                    *s = inp;
+                } else {
+                    *s += inp;
+                }
+            });
+
+            let state_start = state;
+            hash_helper.permute(&mut state); //here we calculate the hash
+
+            //and sanity check ...
+            if let Some(ck) = check {
+                assert_eq!(
+                    *ck, state[0],
+                    "hash output not match with expected at {offset}"
+                );
+            }
+
+            let current_hash = state[0];
+
+            //assignment ...
+            region.assign_fixed(
+                || "assign q_enable",
+                self.config.q_enable,
+                offset,
+                || Value::known(F::one()),
+            )?;
+
+            let c_start = [0; 3]
+                .into_iter()
+                .enumerate()
+                .map(|(i, _)| {
+                    region.assign_advice(
+                        || format!("state input {i}_{offset}"),
+                        config.hash_table_aux[i],
+                        offset,
+                        || Value::known(state_start[i]),
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+
+            let c_end = [5, 3, 4]
+                .into_iter()
+                .enumerate()
+                .map(|(i, j)| {
+                    region.assign_advice(
+                        || format!("state output {i}_{offset}"),
+                        config.hash_table_aux[j],
+                        offset,
+                        || Value::known(state[i]),
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+
+            for (tip, col, val) in [
+                ("hash input first", config.hash_table[1], inp[0]),
+                ("hash input second", config.hash_table[2], inp[1]),
+                ("state input control", config.hash_table[3], control_as_flag),
+                (
+                    "state beginning flag",
+                    config.hash_table[4],
+                    if is_new_sponge { F::one() } else { F::zero() },
+                ),
+                (
+                    "state input control_aux",
+                    config.control_aux,
+                    control_as_flag.invert().unwrap_or_else(F::zero),
+                ),
+                (
+                    "state continue control",
+                    config.s_sponge_continue,
+                    if is_new_sponge { F::zero() } else { F::one() },
+                ),
+            ] {
+                region.assign_advice(
+                    || format!("{tip}_{offset}"),
+                    col,
+                    offset,
+                    || Value::known(val),
+                )?;
+            }
+
+            is_new_sponge = control <= STEP as u64;
+
+            //fill all the hash_table[0] with result hash
+            if is_new_sponge {
+                (process_start..=offset).try_for_each(|ith| {
+                    region
+                        .assign_advice(
+                            || format!("hash index_{ith}"),
+                            config.hash_table[0],
+                            ith,
+                            || Value::known(current_hash),
+                        )
+                        .map(|_| ())
+                })?;
+            }
+
+            //we directly specify the init state of permutation
+            let c_start_arr: [_; 3] = c_start.try_into().expect("same size");
+            states_in.push(c_start_arr.map(PC::Word::from));
+            let c_end_arr: [_; 3] = c_end.try_into().expect("same size");
+            states_out.push(c_end_arr.map(PC::Word::from));
+        }
+
+        // set the last row is "custom", a row both enabled and customed
+        // can only fill a padding row ([0, 0] in MPT mode)
+        config.s_custom.enable(region, last_offset)?;
+        Ok((states_in, states_out))
+    }
+
     fn fill_hash_tbl_custom(&self, region: &mut Region<'_, F>) -> Result<usize, Error> {
         let config = &self.config;
 
@@ -624,56 +789,68 @@ where
             },
         )?;
 
-        layouter.assign_region(
-            || "hash table custom",
-            |mut region| self.fill_hash_tbl_custom(&mut region),
-        )?;
+        let assignment_type = std::env::var("ASSIGNMENT_TYPE").unwrap_or("default".into());
+        let (states_in, states_out) = if assignment_type == "default" {
+            layouter.assign_region(
+                || "hash table",
+                |mut region| {
+                    let offset = self.fill_hash_tbl_custom(&mut region)?;
+                    self.fill_hash_tbl_body(&mut region, offset)
+                },
+            )?
+        } else {
+            layouter.assign_region(
+                || "hash table custom",
+                |mut region| self.fill_hash_tbl_custom(&mut region),
+            )?;
 
-        let data = self.data;
+            let data = self.data;
 
-        let inputs_i = data
-            .inputs
-            .iter()
-            .map(Some)
-            .chain(std::iter::repeat(None))
-            .take(self.calcs);
-        let controls_i = data
-            .controls
-            .iter()
-            .map(Some)
-            .chain(std::iter::repeat(None))
-            .take(self.calcs);
+            let inputs_i = data
+                .inputs
+                .iter()
+                .map(Some)
+                .chain(std::iter::repeat(None))
+                .take(self.calcs);
+            let controls_i = data
+                .controls
+                .iter()
+                .map(Some)
+                .chain(std::iter::repeat(None))
+                .take(self.calcs);
 
-        let checks_i = data
-            .checks
-            .iter()
-            .map(|i| i.as_ref())
-            .chain(std::iter::repeat(None))
-            .take(self.calcs);
+            let checks_i = data
+                .checks
+                .iter()
+                .map(|i| i.as_ref())
+                .chain(std::iter::repeat(None))
+                .take(self.calcs);
 
-        let data: Vec<(usize, ((Option<&[F; 2]>, Option<&u64>), Option<&F>))> =
-            inputs_i.zip(controls_i).zip(checks_i).enumerate().collect();
-        let assignments = data
-            .group_by(|(_, ((_, control), _)), _| control.copied().unwrap_or(0) > STEP as u64)
-            .map(|data| {
-                |mut region: Region<'_, F>| -> Result<PermutedStatePair<PC::Word>, Error> {
-                    self.fill_hash_tbl_body_sponge(&mut region, data)
-                }
-            })
-            .collect::<Vec<_>>();
+            let data: Vec<(usize, ((Option<&[F; 2]>, Option<&u64>), Option<&F>))> =
+                inputs_i.zip(controls_i).zip(checks_i).enumerate().collect();
+            let assignments = data
+                .group_by(|(_, ((_, control), _)), _| control.copied().unwrap_or(0) > STEP as u64)
+                .map(|data| {
+                    |mut region: Region<'_, F>| -> Result<PermutedStatePair<PC::Word>, Error> {
+                        self.fill_hash_tbl_body_sponge(&mut region, data)
+                    }
+                })
+                .collect::<Vec<_>>();
 
-        let ret = layouter.assign_regions(|| "hash table", assignments)?;
-        layouter.assign_region(
-            || "enable hash table custom",
-            |mut region| self.config.s_custom.enable(&mut region, self.calcs),
-        )?;
+            let ret = layouter.assign_regions(|| "hash table", assignments)?;
+            layouter.assign_region(
+                || "enable hash table custom",
+                |mut region| self.config.s_custom.enable(&mut region, self.calcs),
+            )?;
 
-        let mut states_in = vec![];
-        let mut states_out = vec![];
-        for (s_in, s_out) in ret.into_iter() {
-            states_in.extend(s_in);
-            states_out.extend(s_out);
-        }
+            let mut states_in = vec![];
+            let mut states_out = vec![];
+            for (s_in, s_out) in ret.into_iter() {
+                states_in.extend(s_in);
+                states_out.extend(s_out);
+            }
+            (states_in, states_out)
+        };
 
         let mut chip_finals = Vec::new();
         for state in states_in {
@@ -730,7 +907,7 @@ mod tests {
     use super::*;
     use halo2_proofs::halo2curves::bn256::{Bn256, G1Affine};
     use halo2_proofs::halo2curves::group::ff::PrimeField;
-    use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_vk, verify_proof};
+    use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_pk2, keygen_vk, verify_proof};
     use halo2_proofs::poly::commitment::ParamsProver;
     use halo2_proofs::poly::kzg::commitment::{KZGCommitmentScheme, ParamsKZG, ParamsVerifierKZG};
     use halo2_proofs::poly::kzg::multiopen::{ProverSHPLONK, VerifierSHPLONK};
@@ -935,8 +1112,9 @@ mod tests {
             //checks: vec![None, Some(Fr::from_str_vartime("15002881182751877599173281392790087382867290792048832034781070831698029191486").unwrap())],
             ..Default::default()
         });
-        let vk = keygen_vk(&general_params, &circuit).expect("keygen_vk shouldn't fail");
-        let pk = keygen_pk(&general_params, vk, &circuit).expect("keygen_pk shouldn't fail");
+
+        std::env::set_var("ASSIGNMENT_TYPE", "default");
+        let pk = keygen_pk2(&general_params, &circuit).expect("keygen_pk shouldn't fail");
 
         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
         create_proof::<
@@ -959,6 +1137,7 @@ mod tests {
 
         let mut verifier_transcript = Blake2bRead::<_, G1Affine, Challenge255<_>>::init(&proof[..]);
         let strategy = SingleStrategy::new(&general_params);
+        std::env::set_var("ASSIGNMENT_TYPE", "parallel");
         verify_proof::<
             KZGCommitmentScheme<Bn256>,
             VerifierSHPLONK<'_, Bn256>,
