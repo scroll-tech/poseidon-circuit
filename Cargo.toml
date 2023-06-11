@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2022_09_10" }
+halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2022_09_10", features=["parallel_syn"] }
 lazy_static = "1.4.0"
 thiserror = "1.0"
 bitvec = "1"
@@ -14,7 +14,7 @@ rand_xorshift = "0.3.0"
 rand = "0.8"
 
 [patch."https://github.com/privacy-scaling-explorations/halo2.git"]
-halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "scroll-dev-0220" }
+halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "scroll-dev-0220", features=["parallel_syn"] }
 
 [features]
 # Use an implementation using fewer rows (8) per permutation.
