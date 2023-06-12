@@ -115,6 +115,7 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use std::fmt::Debug as DebugT;
+use std::sync::atomic::AtomicU64;
 
 /// The config for poseidon hash circuit
 #[derive(Clone, Debug)]
@@ -633,25 +634,29 @@ where
         Ok(2)
     }
 
-    fn fill_hash_tbl_body_sponge(
+    fn fill_hash_tbl_body_partial(
         &self,
         region: &mut Region<'_, F>,
         data: &[((Option<&[F; 2]>, Option<&u64>), Option<&F>)],
     ) -> Result<PermutedStatePair<PC::Word>, Error> {
         let config = &self.config;
-        let mut is_beginning = true;
         let mut states_in = Vec::new();
         let mut states_out = Vec::new();
         let hash_helper = F::hasher();
+
+        let mut is_new_sponge = true;
+        let mut process_start = 0;
         let mut state = [F::zero(); 3];
 
-        for (offset, ((inp, control), check)) in data.iter().enumerate() {
+        for (i, ((inp, control), check)) in data.iter().enumerate() {
             let control = control.copied().unwrap_or(0u64);
+            let offset = i;
 
             let control_as_flag = F::from_u128(control as u128 * HASHABLE_DOMAIN_SPEC);
 
-            if is_beginning {
+            if is_new_sponge {
                 state[0] = control_as_flag;
+                process_start = offset;
             }
 
             let inp = inp
@@ -659,7 +664,7 @@ where
                 .unwrap_or_else(|| [F::zero(), F::zero()]);
 
             state.iter_mut().skip(1).zip(inp).for_each(|(s, inp)| {
-                if is_beginning {
+                if is_new_sponge {
                     *s = inp;
                 } else {
                     *s += inp;
@@ -676,6 +681,8 @@ where
                     "hash output not match with expected at {offset}"
                 );
             }
+
+            let current_hash = state[0];
 
             //assignment ...
             region.assign_fixed(
@@ -718,7 +725,7 @@ where
                 (
                     "state beginning flag",
                     config.hash_table[4],
-                    if is_beginning { F::one() } else { F::zero() },
+                    if is_new_sponge { F::one() } else { F::zero() },
                 ),
                 (
                     "state input control_aux",
@@ -728,7 +735,7 @@ where
                 (
                     "state continue control",
                     config.s_sponge_continue,
-                    if is_beginning { F::zero() } else { F::one() },
+                    if is_new_sponge { F::zero() } else { F::one() },
                 ),
             ] {
                 region.assign_advice(
@@ -745,21 +752,22 @@ where
             let c_end_arr: [_; 3] = c_end.try_into().expect("same size");
             states_out.push(c_end_arr.map(PC::Word::from));
 
-            is_beginning = false;
+            is_new_sponge = control <= STEP as u64;
+
+            //fill all the hash_table[0] with result hash
+            if is_new_sponge {
+                (process_start..=offset).try_for_each(|ith| {
+                    region
+                        .assign_advice(
+                            || format!("hash index_{ith}"),
+                            config.hash_table[0],
+                            ith,
+                            || Value::known(current_hash),
+                        )
+                        .map(|_| ())
+                })?;
+            }
         }
-
-        //fill all the hash_table[0] with result hash
-        (0..data.len()).try_for_each(|ith| {
-            region
-                .assign_advice(
-                    || format!("hash index_{ith}"),
-                    config.hash_table[0],
-                    ith,
-                    || Value::known(state[0]),
-                )
-                .map(|_| ())
-        })?;
-
         Ok((states_in, states_out))
     }
 
@@ -817,17 +825,32 @@ where
                 .chain(std::iter::repeat(None))
                 .take(self.calcs);
 
+            let chunks_count = std::thread::available_parallelism().map(|e| e.get()).unwrap_or(32);
+            let min_len = self.calcs / chunks_count;
             let data: Vec<((Option<&[F; 2]>, Option<&u64>), Option<&F>)> =
                 inputs_i.zip(controls_i).zip(checks_i).collect();
+
+            let mut chunk_len = 0;
+            let mut max_chunk = 0;
             let assignments = data
-                .group_by(| ((_, control), _), _| control.copied().unwrap_or(0) > STEP as u64)
+                .group_by(| ((_, control), _), _| {
+                    chunk_len += 1;
+                    if control.copied().unwrap_or(0) > STEP as u64 || chunk_len < min_len {
+                        true
+                    } else {
+                        chunk_len = 0;
+                        false
+                    }
+                })
                 .map(|data| {
+                    if data.len() > max_chunk {
+                        max_chunk = data.len();
+                    }
                     |mut region: Region<'_, F>| -> Result<PermutedStatePair<PC::Word>, Error> {
-                        self.fill_hash_tbl_body_sponge(&mut region, data)
+                        self.fill_hash_tbl_body_partial(&mut region, data)
                     }
                 })
                 .collect::<Vec<_>>();
-
             let ret = layouter.assign_regions(|| "hash table", assignments)?;
 
             let mut states_in = vec![];
