@@ -1157,7 +1157,7 @@ mod tests {
         std::env::set_var("ASSIGNMENT_TYPE", "default");
         let pk = keygen_pk2(&general_params, &circuit).expect("keygen_pk shouldn't fail");
 
-        std::env::set_var("ASSIGNMENT_TYPE", "default");
+        std::env::set_var("ASSIGNMENT_TYPE", "parallel");
         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
         create_proof::<
             KZGCommitmentScheme<Bn256>,
