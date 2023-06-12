@@ -310,8 +310,6 @@ pub struct PoseidonHashTable<Fp> {
     pub controls: Vec<u64>,
     /// the expected hash output for checking
     pub checks: Vec<Option<Fp>>,
-    /// the custom hash for nil message
-    pub nil_msg_hash: Option<Fp>,
 }
 
 impl<Fp: FieldExt> PoseidonHashTable<Fp> {
@@ -393,8 +391,6 @@ impl<Fp: Hashable> PoseidonHashTable<Fp> {
 #[derive(Debug)]
 pub struct SpongeChip<'d, Fp: FieldExt, const STEP: usize, PC: Chip<Fp> + Clone + DebugT> {
     calcs: usize,
-    nil_msg_hash: Option<Fp>,
-    mpt_only: bool,
     data: &'d PoseidonHashTable<Fp>,
     config: SpongeConfig<Fp, PC>,
 }
@@ -410,13 +406,9 @@ impl<'d, Fp: Hashable, const STEP: usize, PC: PermuteChip<Fp, Fp::SpecType, 3, 2
         config: SpongeConfig<Fp, PC>,
         data: &'d PoseidonHashTable<Fp>,
         calcs: usize,
-        mpt_only: bool,
-        nil_msg_hash: Option<Fp>,
     ) -> Self {
         Self {
             calcs,
-            mpt_only,
-            nil_msg_hash,
             data,
             config,
         }
@@ -426,7 +418,7 @@ impl<'d, Fp: Hashable, const STEP: usize, PC: PermuteChip<Fp, Fp::SpecType, 3, 2
         let config = &self.config;
 
         config.s_custom.enable(region, 0)?;
-        // all zero row
+        // all zero row without enable
         for (tip, cols) in [
             ("dummy inputs", config.hash_table.as_slice()),
             ("dummy aux inputs", config.hash_table_aux.as_slice()),
@@ -441,47 +433,7 @@ impl<'d, Fp: Hashable, const STEP: usize, PC: PermuteChip<Fp, Fp::SpecType, 3, 2
             }
         }
 
-        config.s_custom.enable(region, 1)?;
-        if self.mpt_only {
-            return Ok(1);
-        }
-
-        // custom
-        for (tip, cols) in [
-            ("custom inputs", &config.hash_table[1..4]),
-            ("custom aux inputs", config.hash_table_aux.as_slice()),
-            ("control aux head custom", [config.control_aux].as_slice()),
-            (
-                "control sponge continue head custom",
-                [config.s_sponge_continue].as_slice(),
-            ),
-        ] {
-            for col in cols {
-                region.assign_advice(|| tip, *col, 1, || Value::known(Fp::zero()))?;
-            }
-        }
-
-        // input, notice hash index constrain require we also assign hash_out col
-        for col in [config.hash_table_aux[5], config.hash_table[0]] {
-            region.assign_advice(
-                || "custom hash for nil",
-                col,
-                1,
-                || {
-                    self.nil_msg_hash
-                        .map(Value::known)
-                        .unwrap_or_else(Value::unknown)
-                },
-            )?;
-        }
-        region.assign_advice(
-            || "custom mark",
-            config.hash_table[4],
-            1,
-            || Value::known(Fp::one()),
-        )?;
-
-        Ok(2)
+        Ok(1)
     }
 
     fn fill_hash_tbl_body(
@@ -805,13 +757,7 @@ mod tests {
             (config, max_rows): Self::Config,
             mut layouter: impl Layouter<Fr>,
         ) -> Result<(), Error> {
-            let chip = SpongeChip::<Fr, TEST_STEP, PC>::construct(
-                config,
-                &self.table,
-                max_rows,
-                false,
-                Some(Fr::from(42u64)),
-            );
+            let chip = SpongeChip::<Fr, TEST_STEP, PC>::construct(config, &self.table, max_rows);
             chip.load(&mut layouter)
         }
     }

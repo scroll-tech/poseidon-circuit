@@ -43,13 +43,8 @@ impl Circuit<Fp> for TestCircuit {
         config: Self::Config,
         mut layouter: impl Layouter<Fp>,
     ) -> Result<(), Error> {
-        let chip = SpongeChip::<Fp, DEFAULT_STEP, Pow5Chip<Fp, 3, 2>>::construct(
-            config,
-            &self.0,
-            self.1,
-            false,
-            Some(Fp::from(42u64)),
-        );
+        let chip =
+            SpongeChip::<Fp, DEFAULT_STEP, Pow5Chip<Fp, 3, 2>>::construct(config, &self.0, self.1);
         chip.load(&mut layouter)
     }
 }
