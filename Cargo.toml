@@ -17,9 +17,11 @@ halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "scr
 [features]
 # Use an implementation using fewer rows (8) per permutation.
 short = []
+cached = []
 # printout the layout of circuits for demo and some unittests
 print_layout = ["halo2_proofs/dev-graph"]
 legacy = []
+default = ["short","cached"]
 
 [dev-dependencies]
 rand = "0.8"
@@ -30,6 +32,10 @@ subtle = "2"
 
 [[bench]]
 name = "hash"
+harness = false
+
+[[bench]]
+name = "synthesis"
 harness = false
 
 [profile.test]

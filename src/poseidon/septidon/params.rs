@@ -167,11 +167,13 @@ mod bn254 {
         fn cached_mds_inv() -> &'static Mds<Self> {
             &CONSTANTS.2
         }
+        #[cfg(feature = "cached")]
         fn cached_pow5(self) -> (Self, Option<Self>) {
             let key = KeyConstant(self);
             let ret = POW5_CONSTANTS.get(&key).copied();
             (key.0, ret)
         }
+        #[cfg(feature = "cached")]
         fn cached_muladd(vector: [Self; 3]) -> ([Self; 3], Option<[Self; 3]>) {
             let key = vector.map(KeyConstant);
             let ret = MULADD_CONSTANTS.get(&key).copied();
