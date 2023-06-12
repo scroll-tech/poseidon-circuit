@@ -1087,6 +1087,56 @@ mod tests {
     where
         PC::Config: Sync,
     {
+        let message1 = [
+            Fr::from_str_vartime("1").unwrap(),
+            Fr::from_str_vartime("2").unwrap(),
+        ];
+
+        let message2 = [Fr::from_str_vartime("50331648").unwrap(), Fr::zero()];
+
+        let k = 8;
+        let circuit = TestCircuit::<PC>::new(PoseidonHashTable {
+            inputs: vec![message1, message2],
+            controls: vec![45, 13],
+            //checks: vec![None, Some(Fr::from_str_vartime("15002881182751877599173281392790087382867290792048832034781070831698029191486").unwrap())],
+            ..Default::default()
+        });
+        let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+        assert_eq!(prover.verify(), Ok(()));
+
+        let circuit = TestCircuit::<PC>::new(PoseidonHashTable {
+            inputs: vec![message1, message2, message1],
+            controls: vec![64, 32],
+            checks: Vec::new(),
+            ..Default::default()
+        });
+        let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+        assert_eq!(prover.verify(), Ok(()));
+
+        let circuit = TestCircuit::<PC>::new(PoseidonHashTable::<Fr> {
+            inputs: vec![message2],
+            controls: vec![13],
+            ..Default::default()
+        });
+        let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+        assert_eq!(prover.verify(), Ok(()));
+        let circuit = TestCircuit::<PC>::new(PoseidonHashTable::<Fr> {
+            ..Default::default()
+        });
+        let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+        assert_eq!(prover.verify(), Ok(()));
+    }
+
+    #[test]
+    fn poseidon_parallel_synthesis() {
+        poseidon_parallel_synthesis_impl::<Pow5Chip<Fr, 3, 2>>();
+        poseidon_parallel_synthesis_impl::<SeptidonChip>();
+    }
+
+    fn poseidon_parallel_synthesis_impl<PC: PermuteChip<Fr, <Fr as Hashable>::SpecType, 3, 2>>()
+    where
+        PC::Config: Sync,
+    {
         use rand::SeedableRng;
         use rand_xorshift::XorShiftRng;
 
@@ -1116,6 +1166,7 @@ mod tests {
         std::env::set_var("ASSIGNMENT_TYPE", "default");
         let pk = keygen_pk2(&general_params, &circuit).expect("keygen_pk shouldn't fail");
 
+        std::env::set_var("ASSIGNMENT_TYPE", "parallel");
         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
         create_proof::<
             KZGCommitmentScheme<Bn256>,
@@ -1136,8 +1187,8 @@ mod tests {
         let proof = transcript.finalize();
 
         let mut verifier_transcript = Blake2bRead::<_, G1Affine, Challenge255<_>>::init(&proof[..]);
+        std::env::set_var("ASSIGNMENT_TYPE", "default");
         let strategy = SingleStrategy::new(&general_params);
-        std::env::set_var("ASSIGNMENT_TYPE", "parallel");
         verify_proof::<
             KZGCommitmentScheme<Bn256>,
             VerifierSHPLONK<'_, Bn256>,
@@ -1152,30 +1203,5 @@ mod tests {
             &mut verifier_transcript,
         )
         .expect("failed to verify bench circuit");
-
-        // let prover = MockProver::run(k, &circuit, vec![]).unwrap();
-        // assert_eq!(prover.verify(), Ok(()));
-
-        // let circuit = TestCircuit::<PC>::new(PoseidonHashTable {
-        //     inputs: vec![message1, message2, message1],
-        //     controls: vec![64, 32],
-        //     checks: Vec::new(),
-        //     ..Default::default()
-        // });
-        // let prover = MockProver::run(k, &circuit, vec![]).unwrap();
-        // assert_eq!(prover.verify(), Ok(()));
-
-        // let circuit = TestCircuit::<PC>::new(PoseidonHashTable::<Fr> {
-        //     inputs: vec![message2],
-        //     controls: vec![13],
-        //     ..Default::default()
-        // });
-        // let prover = MockProver::run(k, &circuit, vec![]).unwrap();
-        // assert_eq!(prover.verify(), Ok(()));
-        // let circuit = TestCircuit::<PC>::new(PoseidonHashTable::<Fr> {
-        //     ..Default::default()
-        // });
-        // let prover = MockProver::run(k, &circuit, vec![]).unwrap();
-        // assert_eq!(prover.verify(), Ok(()));
     }
 }
