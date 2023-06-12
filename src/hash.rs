@@ -636,24 +636,22 @@ where
     fn fill_hash_tbl_body_sponge(
         &self,
         region: &mut Region<'_, F>,
-        data: &[(usize, ((Option<&[F; 2]>, Option<&u64>), Option<&F>))],
+        data: &[((Option<&[F; 2]>, Option<&u64>), Option<&F>)],
     ) -> Result<PermutedStatePair<PC::Word>, Error> {
         let config = &self.config;
         let mut is_beginning = true;
         let mut states_in = Vec::new();
         let mut states_out = Vec::new();
         let hash_helper = F::hasher();
-        let mut process_start = 0;
         let mut state = [F::zero(); 3];
 
-        for (offset, ((inp, control), check)) in data.iter() {
+        for (offset, ((inp, control), check)) in data.iter().enumerate() {
             let control = control.copied().unwrap_or(0u64);
 
             let control_as_flag = F::from_u128(control as u128 * HASHABLE_DOMAIN_SPEC);
 
             if is_beginning {
                 state[0] = control_as_flag;
-                process_start = *offset;
             }
 
             let inp = inp
@@ -683,7 +681,7 @@ where
             region.assign_fixed(
                 || "assign q_enable",
                 self.config.q_enable,
-                *offset,
+                offset,
                 || Value::known(F::one()),
             )?;
 
@@ -694,7 +692,7 @@ where
                     region.assign_advice(
                         || format!("state input {i}_{offset}"),
                         config.hash_table_aux[i],
-                        *offset,
+                        offset,
                         || Value::known(state_start[i]),
                     )
                 })
@@ -707,7 +705,7 @@ where
                     region.assign_advice(
                         || format!("state output {i}_{offset}"),
                         config.hash_table_aux[j],
-                        *offset,
+                        offset,
                         || Value::known(state[i]),
                     )
                 })
@@ -736,7 +734,7 @@ where
                 region.assign_advice(
                     || format!("{tip}_{offset}"),
                     col,
-                    *offset,
+                    offset,
                     || Value::known(val),
                 )?;
             }
@@ -756,7 +754,7 @@ where
                 .assign_advice(
                     || format!("hash index_{ith}"),
                     config.hash_table[0],
-                    ith + process_start,
+                    ith,
                     || Value::known(state[0]),
                 )
                 .map(|_| ())
@@ -819,10 +817,10 @@ where
                 .chain(std::iter::repeat(None))
                 .take(self.calcs);
 
-            let data: Vec<(usize, ((Option<&[F; 2]>, Option<&u64>), Option<&F>))> =
-                inputs_i.zip(controls_i).zip(checks_i).enumerate().collect();
+            let data: Vec<((Option<&[F; 2]>, Option<&u64>), Option<&F>)> =
+                inputs_i.zip(controls_i).zip(checks_i).collect();
             let assignments = data
-                .group_by(|(_, ((_, control), _)), _| control.copied().unwrap_or(0) > STEP as u64)
+                .group_by(| ((_, control), _), _| control.copied().unwrap_or(0) > STEP as u64)
                 .map(|data| {
                     |mut region: Region<'_, F>| -> Result<PermutedStatePair<PC::Word>, Error> {
                         self.fill_hash_tbl_body_sponge(&mut region, data)
