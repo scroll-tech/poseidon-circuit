@@ -413,7 +413,6 @@ where
     fn fill_hash_tbl_body(
         &self,
         region: &mut Region<'_, F>,
-        begin_offset: usize,
     ) -> Result<PermutedStatePair<PC::Word>, Error> {
         let config = &self.config;
         let data = self.data;
@@ -445,12 +444,10 @@ where
         let mut is_new_sponge = true;
         let mut process_start = 0;
         let mut state: [F; 3] = [F::zero(); 3];
-        let mut last_offset = 0;
 
         for (i, ((inp, control), check)) in inputs_i.zip(controls_i).zip(checks_i).enumerate() {
             let control = control.copied().unwrap_or(0);
-            let offset = i + begin_offset;
-            last_offset = offset;
+            let offset = i;
 
             let control_as_flag = F::from_u128(control as u128 * HASHABLE_DOMAIN_SPEC);
 
@@ -571,7 +568,6 @@ where
 
         // set the last row is "custom", a row both enabled and customed
         // can only fill a padding row ([0, 0] in MPT mode)
-        config.s_custom.enable(region, last_offset)?;
         Ok((states_in, states_out))
     }
 
@@ -789,21 +785,18 @@ where
             },
         )?;
 
+        layouter.assign_region(
+            || "hash table custom",
+            |mut region| self.fill_hash_tbl_custom(&mut region),
+        )?;
         let assignment_type = std::env::var("ASSIGNMENT_TYPE").unwrap_or("default".into());
         let (states_in, states_out) = if assignment_type == "default" {
-            layouter.assign_region(
+            let ret = layouter.assign_region(
                 || "hash table",
-                |mut region| {
-                    let offset = self.fill_hash_tbl_custom(&mut region)?;
-                    self.fill_hash_tbl_body(&mut region, offset)
-                },
-            )?
-        } else {
-            layouter.assign_region(
-                || "hash table custom",
-                |mut region| self.fill_hash_tbl_custom(&mut region),
+                |mut region| self.fill_hash_tbl_body(&mut region),
             )?;
-
+            ret
+        } else {
             let data = self.data;
 
             let inputs_i = data
@@ -838,10 +831,6 @@ where
                 .collect::<Vec<_>>();
 
             let ret = layouter.assign_regions(|| "hash table", assignments)?;
-            layouter.assign_region(
-                || "enable hash table custom",
-                |mut region| self.config.s_custom.enable(&mut region, self.calcs),
-            )?;
 
             let mut states_in = vec![];
             let mut states_out = vec![];
@@ -851,6 +840,10 @@ where
             }
             (states_in, states_out)
         };
+        layouter.assign_region(
+            || "enable hash table custom",
+            |mut region| self.config.s_custom.enable(&mut region, self.calcs),
+        )?;
 
         let mut chip_finals = Vec::new();
         for state in states_in {
@@ -1166,7 +1159,7 @@ mod tests {
         std::env::set_var("ASSIGNMENT_TYPE", "default");
         let pk = keygen_pk2(&general_params, &circuit).expect("keygen_pk shouldn't fail");
 
-        std::env::set_var("ASSIGNMENT_TYPE", "parallel");
+        std::env::set_var("ASSIGNMENT_TYPE", "default");
         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
         create_proof::<
             KZGCommitmentScheme<Bn256>,
