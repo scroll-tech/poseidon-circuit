@@ -47,8 +47,6 @@ impl Circuit<Fp> for TestCircuit {
             config,
             &self.0,
             self.1,
-            false,
-            Some(Fp::from(42u64)),
         );
         chip.load(&mut layouter)
     }
