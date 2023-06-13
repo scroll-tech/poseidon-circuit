@@ -60,7 +60,7 @@ impl<F: CachedConstants, S: Spec<F, WIDTH, RATE>> PoseidonInstructions<F, S, WID
 
                 // Assign the internal witness of the permutation.
                 let initial_values = map_array(initial_state, |word| word.value());
-                let final_values = self.assign_permutation(region, initial_values)?;
+                let final_values = self.assign_permutation(region, initial_values, 0)?;
 
                 // Return the cells containing the final state.
                 let chip_output = self.final_state_cells();
@@ -87,9 +87,13 @@ impl<F: CachedConstants, S: Spec<F, WIDTH, RATE>> PoseidonInstructions<F, S, WID
         layouter: &mut impl Layouter<F>,
         initial_states: &[State<Self::Word, WIDTH>],
     ) -> Result<Vec<State<Self::Word, WIDTH>>, Error> {
-        layouter.assign_region(
-            || "permute state",
-            |mut region| {
+        let chunks_count = std::thread::available_parallelism()
+            .map(|e| e.get())
+            .unwrap_or(32);
+        let chunks_len = initial_states.len() / chunks_count + 2;
+
+        let assignments = initial_states.chunks(chunks_len).map(|initial_states| {
+            |mut region: Region<'_, F>| -> Result<Vec<State<Self::Word, WIDTH>>, Error> {
                 let region = &mut region;
                 let mut final_states = vec![];
                 let mut last_offset = 0;
@@ -108,7 +112,7 @@ impl<F: CachedConstants, S: Spec<F, WIDTH, RATE>> PoseidonInstructions<F, S, WID
 
                     // Assign the internal witness of the permutation.
                     let initial_values = map_array(initial_state, |word| word.value());
-                    let final_values = self.assign_permutation(region, initial_values)?;
+                    let final_values = self.assign_permutation(region, initial_values, last_offset)?;
 
                     // Return the cells containing the final state.
                     let chip_output = self.final_state_cells();
@@ -129,57 +133,9 @@ impl<F: CachedConstants, S: Spec<F, WIDTH, RATE>> PoseidonInstructions<F, S, WID
                     final_states.push(final_state.try_into().unwrap());
                 }
                 Ok(final_states)
-            },
-        )
-        // let chunks_count = std::thread::available_parallelism()
-        //     .map(|e| e.get())
-        //     .unwrap_or(32);
-        // let chunks_len = initial_states.len() / chunks_count + 2;
-        // println!("chunks_len: {}", chunks_len);
-
-        // let assignments = initial_states.chunks(chunks_len).map(|initial_states| {
-        //     |mut region: Region<'_, F>| -> Result<Vec<State<Self::Word, WIDTH>>, Error> {
-        //         let mut final_state = vec![];
-        //         let mut last_offset = 0usize;
-        //         for initial_state in initial_states.iter() {
-        //             let region = &mut region;
-
-        //             // Copy the given initial_state into the permutation chip.
-        //             let chip_input = self.initial_state_cells();
-        //             for i in 0..WIDTH {
-        //                 initial_state[i].0.copy_advice(
-        //                     || format!("load state_{i}"),
-        //                     region,
-        //                     chip_input[i].column,
-        //                     last_offset + chip_input[i].offset as usize,
-        //                 )?;
-        //             }
-
-        //             // Assign the internal witness of the permutation.
-        //             let initial_values = map_array(initial_state, |word| word.value());
-        //             let final_values = self.assign_permutation(region, initial_values)?;
-
-        //             // Return the cells containing the final state.
-        //             let chip_output = self.final_state_cells();
-        //             let state: Vec<StateWord<F>> = (0..WIDTH)
-        //                 .map(|i| {
-        //                     region
-        //                         .assign_advice(
-        //                             || format!("output {i}"),
-        //                             chip_output[i].column,
-        //                             last_offset + chip_output[i].offset as usize,
-        //                             || final_values[i],
-        //                         )
-        //                         .map(StateWord)
-        //                 })
-        //                 .collect::<Result<Vec<_>, _>>()?;
-        //             last_offset += 7;
-        //             final_state.push(state.try_into().unwrap())
-        //         }
-        //         Ok(final_state)
-        //     }
-        // }).collect::<Vec<_>>();
-        // layouter.assign_regions(|| "permute state", assignments).map(|e| e.into_iter().flatten().collect::<Vec<_>>())
+            }
+        }).collect::<Vec<_>>();
+        layouter.assign_regions(|| "permute state", assignments).map(|e| e.into_iter().flatten().collect::<Vec<_>>())
     }
 }
 
