@@ -840,6 +840,11 @@ where
 
             let mut chunk_len = 0;
             let mut max_chunk = 0;
+
+            // Split `data` into chunks and ensure each chunks is longer thant `min_len` and ends
+            // with a new sponge.
+            //
+            // Each chunk would be processed in a seperate thread.
             let assignments = data
                 .group_by(|((_, control), _), _| {
                     chunk_len += 1;
@@ -869,7 +874,7 @@ where
             }
             layouter.assign_region(
                 || "enable hash table custom",
-                |mut region| self.config.s_custom.enable(&mut region, self.calcs),
+                |mut region| self.config.s_custom.enable(&mut region, 0),
             )?;
             (states_in, states_out)
         };
@@ -885,22 +890,20 @@ where
             chip_finals.push(final_state);
         }
 
-        let assignments = states_out
-            .iter()
-            .flatten()
-            .zip(chip_finals.iter().flatten())
-            .map(|(s_cell, final_cell)| {
-                |mut region: Region<'_, F>| -> Result<(), Error> {
-                    let s_cell: AssignedCell<F, F> = s_cell.clone().into();
-                    let final_cell: AssignedCell<F, F> = final_cell.clone().into();
-                    region.constrain_equal(s_cell.cell(), final_cell.cell())?;
-                    Ok(())
+        layouter.assign_region(
+            || "final state dummy",
+            |mut region| {
+                for (state, final_state) in states_out.iter().zip(chip_finals.iter()) {
+                    for (s_cell, final_cell) in state.iter().zip(final_state.iter()) {
+                        let s_cell: AssignedCell<F, F> = s_cell.clone().into();
+                        let final_cell: AssignedCell<F, F> = final_cell.clone().into();
+                        region.constrain_equal(s_cell.cell(), final_cell.cell())?;
+                    }
                 }
-            })
-            .collect();
 
-        layouter.assign_regions(|| "final state dummy", assignments)?;
-        Ok(())
+                Ok(())
+            },
+        )
     }
 }
 
