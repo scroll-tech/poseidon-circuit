@@ -644,17 +644,14 @@ where
         region: &mut Region<'_, F>,
         data: &[((Option<&[F; 2]>, Option<&u64>), Option<&F>)],
         is_first_pass: &mut bool,
-    ) -> Result<Option<PermutedStatePair<PC::Word>>, Error> {
+    ) -> Result<PermutedStatePair<PC::Word>, Error> {
+
         let config = &self.config;
         let mut states_in = Vec::new();
         let mut states_out = Vec::new();
-        let hash_helper = F::hasher();
-
-        let mut is_new_sponge = true;
-        let mut process_start = 0;
-        let mut state = [F::zero(); 3];
 
         if *is_first_pass {
+            *is_first_pass = false;
             region.assign_advice(
                 || "region shape dummy column",
                 // any advice that we access in this region can be used
@@ -663,8 +660,14 @@ where
                 || Value::known(F::zero()),
             )?;
             *is_first_pass = false;
-            return Ok(None);
+            return Ok((states_in, states_out));
         }
+
+        let hash_helper = F::hasher();
+
+        let mut is_new_sponge = true;
+        let mut process_start = 0;
+        let mut state = [F::zero(); 3];
 
         for (i, ((inp, control), check)) in data.iter().enumerate() {
             let control = control.copied().unwrap_or(0u64);
@@ -786,7 +789,7 @@ where
                 })?;
             }
         }
-        Ok(Some((states_in, states_out)))
+        Ok((states_in, states_out))
     }
 
     /// load the table into circuit under the specified config
@@ -851,11 +854,10 @@ where
                 .map(|e| e.get())
                 .unwrap_or(32);
             let min_len = self.calcs / chunks_count;
+            let mut chunk_len = 0;
+
             let data: Vec<((Option<&[F; 2]>, Option<&u64>), Option<&F>)> =
                 inputs_i.zip(controls_i).zip(checks_i).collect();
-
-            let mut chunk_len = 0;
-            let mut max_chunk = 0;
 
             // Split `data` into chunks and ensure each chunks is longer thant `min_len` and ends
             // with a new sponge.
@@ -871,18 +873,10 @@ where
                         false
                     }
                 })
-                .collect::<Vec<_>>();
-            let mut is_first_pass = vec![true; assignments.len()];
-            let assignments = assignments.into_iter()
-                .zip(is_first_pass.chunks_mut(1))
-                .map(|(data, is_first_pass)| {
-                    if data.len() > max_chunk {
-                        max_chunk = data.len();
-                    }
-                    let is_first_pass = &mut is_first_pass[0];
-                    |mut region: Region<'_, F>| -> Result<Option<PermutedStatePair<PC::Word>>, Error> {
-                        log::debug!("region data.len() = {}", data.len());
-                        self.fill_hash_tbl_body_partial(&mut region, data, is_first_pass)
+                .map(|data| {
+                    let mut is_first_pass = true;
+                    move |mut region: Region<'_, F>| -> Result<PermutedStatePair<PC::Word>, Error> {
+                        self.fill_hash_tbl_body_partial(&mut region, data, &mut is_first_pass)
                     }
                 })
                 .collect::<Vec<_>>();
@@ -890,8 +884,7 @@ where
 
             let mut states_in = vec![];
             let mut states_out = vec![];
-            for state in ret.into_iter() {
-                let (s_in, s_out) = state.unwrap();
+            for (s_in, s_out) in ret.into_iter() {
                 states_in.extend(s_in);
                 states_out.extend(s_out);
             }
@@ -908,23 +901,10 @@ where
 
         let final_state_time = Instant::now();
 
-        /*
         let chip = PC::construct(config.permute_config.clone());
         let chip_finals = <PC as PoseidonInstructions<F, F::SpecType, 3, 2>>::permute_batch(
             &chip, layouter, &states_in,
         )?;
-        */
-
-        let mut chip_finals = Vec::new();
-        for state in states_in {
-            let chip = PC::construct(config.permute_config.clone());
-
-            let final_state = <PC as PoseidonInstructions<F, F::SpecType, 3, 2>>::permute(
-                &chip, layouter, &state,
-            )?;
-
-            chip_finals.push(final_state);
-        }
 
         log::info!("final state took {:?}", final_state_time.elapsed());
 
