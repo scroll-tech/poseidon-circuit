@@ -124,7 +124,7 @@ impl SeptidonChip {
         initial_state: [Value<F>; 3],
         begin_offset: usize,
     ) -> Result<[Value<F>; 3], Error> {
-        self.control_chip.assign(region, begin_offset)?;
+        self.control_chip.assign_with_offset(region, begin_offset)?;
 
         let mut state = initial_state;
 
