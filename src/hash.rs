@@ -115,7 +115,6 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use std::fmt::Debug as DebugT;
-use std::sync::atomic::AtomicU64;
 
 /// The config for poseidon hash circuit
 #[derive(Clone, Debug)]
@@ -414,6 +413,7 @@ where
     fn fill_hash_tbl_body(
         &self,
         region: &mut Region<'_, F>,
+        begin_offset: usize,
     ) -> Result<PermutedStatePair<PC::Word>, Error> {
         let config = &self.config;
         let data = self.data;
@@ -445,10 +445,12 @@ where
         let mut is_new_sponge = true;
         let mut process_start = 0;
         let mut state: [F; 3] = [F::zero(); 3];
+        let mut last_offset = 0;
 
         for (i, ((inp, control), check)) in inputs_i.zip(controls_i).zip(checks_i).enumerate() {
             let control = control.copied().unwrap_or(0);
-            let offset = i;
+            let offset = i + begin_offset;
+            let last_offset = offset;
 
             let control_as_flag = F::from_u128(control as u128 * HASHABLE_DOMAIN_SPEC);
 
@@ -569,6 +571,7 @@ where
 
         // set the last row is "custom", a row both enabled and customed
         // can only fill a padding row ([0, 0] in MPT mode)
+        self.config.s_custom.enable(region, last_offset)?;
         Ok((states_in, states_out))
     }
 
@@ -791,18 +794,21 @@ where
             },
         )?;
 
-        layouter.assign_region(
-            || "hash table custom",
-            |mut region| self.fill_hash_tbl_custom(&mut region),
-        )?;
         let assignment_type = std::env::var("ASSIGNMENT_TYPE").unwrap_or("default".into());
         let (states_in, states_out) = if assignment_type == "default" {
             let ret = layouter.assign_region(
                 || "hash table",
-                |mut region| self.fill_hash_tbl_body(&mut region),
+                |mut region| {
+                    let begin_offset = self.fill_hash_tbl_custom(&mut region)?;
+                    self.fill_hash_tbl_body(&mut region, begin_offset)
+                },
             )?;
             ret
         } else {
+            layouter.assign_region(
+                || "hash table custom",
+                |mut region| self.fill_hash_tbl_custom(&mut region),
+            )?;
             let data = self.data;
 
             let inputs_i = data
@@ -825,7 +831,9 @@ where
                 .chain(std::iter::repeat(None))
                 .take(self.calcs);
 
-            let chunks_count = std::thread::available_parallelism().map(|e| e.get()).unwrap_or(32);
+            let chunks_count = std::thread::available_parallelism()
+                .map(|e| e.get())
+                .unwrap_or(32);
             let min_len = self.calcs / chunks_count;
             let data: Vec<((Option<&[F; 2]>, Option<&u64>), Option<&F>)> =
                 inputs_i.zip(controls_i).zip(checks_i).collect();
@@ -833,7 +841,7 @@ where
             let mut chunk_len = 0;
             let mut max_chunk = 0;
             let assignments = data
-                .group_by(| ((_, control), _), _| {
+                .group_by(|((_, control), _), _| {
                     chunk_len += 1;
                     if control.copied().unwrap_or(0) > STEP as u64 || chunk_len < min_len {
                         true
@@ -859,12 +867,12 @@ where
                 states_in.extend(s_in);
                 states_out.extend(s_out);
             }
+            layouter.assign_region(
+                || "enable hash table custom",
+                |mut region| self.config.s_custom.enable(&mut region, self.calcs),
+            )?;
             (states_in, states_out)
         };
-        layouter.assign_region(
-            || "enable hash table custom",
-            |mut region| self.config.s_custom.enable(&mut region, self.calcs),
-        )?;
 
         let mut chip_finals = Vec::new();
         for state in states_in {
