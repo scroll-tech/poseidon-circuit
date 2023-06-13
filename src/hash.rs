@@ -853,7 +853,7 @@ where
             let chunks_count = std::thread::available_parallelism()
                 .map(|e| e.get())
                 .unwrap_or(32);
-            let min_len = self.calcs / chunks_count;
+            let min_len = self.calcs / chunks_count + 1;
             let mut chunk_len = 0;
 
             let data: Vec<((Option<&[F; 2]>, Option<&u64>), Option<&F>)> =
