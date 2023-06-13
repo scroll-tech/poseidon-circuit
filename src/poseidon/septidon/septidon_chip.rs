@@ -112,8 +112,13 @@ impl SeptidonChip {
         })
     }
 
-    /// Assign the witness of a permutation into the given region.
-    pub fn assign_permutation<F: CachedConstants>(
+    /// Assign the witness of a permutation into the new region.
+    pub fn assign_permutation<F: CachedConstants>(&self, region: &mut Region<'_, F>, initial_state: [Value<F>; 3]) -> Result<[Value<F>; 3], Error> {
+        self.assign_permutation_with_offset(region, initial_state, 0)
+    }
+
+    /// Assign the witness of a permutation into the existen region.
+    pub fn assign_permutation_with_offset<F: CachedConstants>(
         &self,
         region: &mut Region<'_, F>,
         initial_state: [Value<F>; 3],

@@ -60,7 +60,7 @@ impl<F: CachedConstants, S: Spec<F, WIDTH, RATE>> PoseidonInstructions<F, S, WID
 
                 // Assign the internal witness of the permutation.
                 let initial_values = map_array(initial_state, |word| word.value());
-                let final_values = self.assign_permutation(region, initial_values, 0)?;
+                let final_values = self.assign_permutation(region, initial_values)?;
 
                 // Return the cells containing the final state.
                 let chip_output = self.final_state_cells();
@@ -112,7 +112,7 @@ impl<F: CachedConstants, S: Spec<F, WIDTH, RATE>> PoseidonInstructions<F, S, WID
 
                     // Assign the internal witness of the permutation.
                     let initial_values = map_array(initial_state, |word| word.value());
-                    let final_values = self.assign_permutation(region, initial_values, last_offset)?;
+                    let final_values = self.assign_permutation_with_offset(region, initial_values, last_offset)?;
 
                     // Return the cells containing the final state.
                     let chip_output = self.final_state_cells();

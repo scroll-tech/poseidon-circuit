@@ -52,7 +52,7 @@ impl Circuit<F> for TestCircuit {
 
             let final_state = layouter.assign_region(
                 || "SeptidonChip",
-                |mut region: Region<'_, F>| config.assign_permutation(&mut region, initial_state, 0),
+                |mut region: Region<'_, F>| config.assign_permutation(&mut region, initial_state),
             )?;
 
             let got = format!("{:?}", unwrap_value(join_values(final_state)));
