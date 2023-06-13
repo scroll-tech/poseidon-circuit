@@ -450,7 +450,7 @@ where
         for (i, ((inp, control), check)) in inputs_i.zip(controls_i).zip(checks_i).enumerate() {
             let control = control.copied().unwrap_or(0);
             let offset = i + begin_offset;
-            let last_offset = offset;
+            last_offset = offset;
 
             let control_as_flag = F::from_u128(control as u128 * HASHABLE_DOMAIN_SPEC);
 
@@ -879,16 +879,10 @@ where
             (states_in, states_out)
         };
 
-        let mut chip_finals = Vec::new();
-        for state in states_in {
-            let chip = PC::construct(config.permute_config.clone());
-
-            let final_state = <PC as PoseidonInstructions<F, F::SpecType, 3, 2>>::permute(
-                &chip, layouter, &state,
-            )?;
-
-            chip_finals.push(final_state);
-        }
+        let chip = PC::construct(config.permute_config.clone());
+        let chip_finals = <PC as PoseidonInstructions<F, F::SpecType, 3, 2>>::permute_batch(
+            &chip, layouter, &states_in,
+        )?;
 
         layouter.assign_region(
             || "final state dummy",

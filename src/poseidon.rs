@@ -51,8 +51,17 @@ pub trait PoseidonInstructions<F: FieldExt, S: Spec<F, T, RATE>, const T: usize,
     fn permute(
         &self,
         layouter: &mut impl Layouter<F>,
-        initial_state: &State<Self::Word, T>,
+        initial_states: &State<Self::Word, T>,
     ) -> Result<State<Self::Word, T>, Error>;
+
+    /// Applies the Poseidon permutation to the given states.
+    fn permute_batch(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        initial_states: &[State<Self::Word, T>],
+    ) -> Result<Vec<State<Self::Word, T>>, Error> {
+        initial_states.iter().map(|initial_state| self.permute(layouter, initial_state)).collect::<Result<Vec<_>, Error>>()
+    }
 }
 
 /// The set of circuit instructions required to use the [`Sponge`] and [`Hash`] gadgets.

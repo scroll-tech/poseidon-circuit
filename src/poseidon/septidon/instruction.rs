@@ -3,7 +3,7 @@ use super::super::{
     PermuteChip, PoseidonInstructions, StateWord, Var,
 };
 use super::{params::CachedConstants, util::map_array, SeptidonChip};
-use halo2_proofs::arithmetic::FieldExt;
+use halo2_proofs::{arithmetic::FieldExt, circuit::Region};
 use halo2_proofs::{
     circuit::{Chip, Layouter},
     plonk::{ConstraintSystem, Error},
@@ -80,6 +80,51 @@ impl<F: CachedConstants, S: Spec<F, WIDTH, RATE>> PoseidonInstructions<F, S, WID
                 Ok(final_state.try_into().unwrap())
             },
         )
+    }
+
+    fn permute_batch(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        initial_states: &[State<Self::Word, WIDTH>],
+    ) -> Result<Vec<State<Self::Word, WIDTH>>, Error> {
+        let assignments = initial_states.iter().map(|initial_state| {
+            |mut region: Region<'_, F>| -> Result<State<Self::Word, WIDTH>, Error> {
+                let region = &mut region;
+
+                // Copy the given initial_state into the permutation chip.
+                let chip_input = self.initial_state_cells();
+                for i in 0..WIDTH {
+                    initial_state[i].0.copy_advice(
+                        || format!("load state_{i}"),
+                        region,
+                        chip_input[i].column,
+                        chip_input[i].offset as usize,
+                    )?;
+                }
+
+                // Assign the internal witness of the permutation.
+                let initial_values = map_array(initial_state, |word| word.value());
+                let final_values = self.assign_permutation(region, initial_values)?;
+
+                // Return the cells containing the final state.
+                let chip_output = self.final_state_cells();
+                let final_state: Vec<StateWord<F>> = (0..WIDTH)
+                    .map(|i| {
+                        region
+                            .assign_advice(
+                                || format!("output {i}"),
+                                chip_output[i].column,
+                                chip_output[i].offset as usize,
+                                || final_values[i],
+                            )
+                            .map(StateWord)
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+
+                Ok(final_state.try_into().unwrap())
+            }
+        }).collect::<Vec<_>>();
+        layouter.assign_regions(|| "permute state", assignments)
     }
 }
 
