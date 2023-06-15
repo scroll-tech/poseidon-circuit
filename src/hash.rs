@@ -644,8 +644,8 @@ where
         region: &mut Region<'_, F>,
         data: &[((Option<&[F; 2]>, Option<&u64>), Option<&F>)],
         is_first_pass: &mut bool,
+        is_last_sub_region: bool,
     ) -> Result<PermutedStatePair<PC::Word>, Error> {
-
         let config = &self.config;
         let mut states_in = Vec::new();
         let mut states_out = Vec::new();
@@ -789,6 +789,10 @@ where
                 })?;
             }
         }
+
+        if is_last_sub_region {
+            self.config.s_custom.enable(region, data.len() - 1)?;
+        }
         Ok((states_in, states_out))
     }
 
@@ -862,7 +866,7 @@ where
             // Split `data` into chunks and ensure each chunks is longer thant `min_len` and ends
             // with a new sponge.
             //
-            // Each chunk would be processed in a seperate thread.
+            // Each chunk would be processed in a separate thread.
             let assignments = data
                 .group_by(|((_, control), _), _| {
                     chunk_len += 1;
@@ -873,10 +877,21 @@ where
                         false
                     }
                 })
-                .map(|data| {
+                .collect::<Vec<_>>();
+            let assignments_len = assignments.len();
+            let assignments = assignments
+                .into_iter()
+                .enumerate()
+                .map(|(i, data)| {
                     let mut is_first_pass = true;
+                    let is_last_sub_region = (i == assignments_len - 1);
                     move |mut region: Region<'_, F>| -> Result<PermutedStatePair<PC::Word>, Error> {
-                        self.fill_hash_tbl_body_partial(&mut region, data, &mut is_first_pass)
+                        self.fill_hash_tbl_body_partial(
+                            &mut region,
+                            data,
+                            &mut is_first_pass,
+                            is_last_sub_region,
+                        )
                     }
                 })
                 .collect::<Vec<_>>();
@@ -888,10 +903,6 @@ where
                 states_in.extend(s_in);
                 states_out.extend(s_out);
             }
-            layouter.assign_region(
-                || "enable hash table custom",
-                |mut region| self.config.s_custom.enable(&mut region, 0),
-            )?;
             log::info!(
                 "hash table parallel version took {:?}",
                 hash_table_par_time.elapsed()
