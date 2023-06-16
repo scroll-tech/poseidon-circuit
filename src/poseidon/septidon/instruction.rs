@@ -3,7 +3,7 @@ use super::super::{
     PermuteChip, PoseidonInstructions, StateWord, Var,
 };
 use super::{params::CachedConstants, util::map_array, SeptidonChip};
-use halo2_proofs::{arithmetic::FieldExt, circuit::Region};
+use halo2_proofs::{arithmetic::FieldExt, circuit::{Region, Value}};
 use halo2_proofs::{
     circuit::{Chip, Layouter},
     plonk::{ConstraintSystem, Error},
@@ -93,10 +93,18 @@ impl<F: CachedConstants, S: Spec<F, WIDTH, RATE>> PoseidonInstructions<F, S, WID
         let chunks_len = initial_states.len() / chunks_count + 2;
 
         let assignments = initial_states.chunks(chunks_len).map(|initial_states| {
-            |mut region: Region<'_, F>| -> Result<Vec<State<Self::Word, WIDTH>>, Error> {
+            let mut is_first_pass = true;
+            move |mut region: Region<'_, F>| -> Result<Vec<State<Self::Word, WIDTH>>, Error> {
                 let region = &mut region;
                 let mut final_states = vec![];
                 let mut last_offset = 0;
+
+                if is_first_pass {
+                    is_first_pass = false;
+                    let col = self.final_state_cells().first().unwrap().column;
+                    region.assign_advice(|| "First pass dummy assign", col, initial_states.len() * 8, || Value::known(F::zero()))?;
+                    return Ok(vec![]);
+                }
 
                 for initial_state in initial_states.iter() {
                     // Copy the given initial_state into the permutation chip.
