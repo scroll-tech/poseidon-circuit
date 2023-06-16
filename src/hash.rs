@@ -884,7 +884,7 @@ where
                 .enumerate()
                 .map(|(i, data)| {
                     let mut is_first_pass = true;
-                    let is_last_sub_region = (i == assignments_len - 1);
+                    let is_last_sub_region = i == assignments_len - 1;
                     move |mut region: Region<'_, F>| -> Result<PermutedStatePair<PC::Word>, Error> {
                         self.fill_hash_tbl_body_partial(
                             &mut region,
@@ -912,11 +912,24 @@ where
 
         let final_state_time = Instant::now();
 
-        let chip = PC::construct(config.permute_config.clone());
-        let chip_finals = <PC as PoseidonInstructions<F, F::SpecType, 3, 2>>::permute_batch(
-            &chip, layouter, &states_in,
-        )?;
+        let chip_finals = if std::env::var("ASSIGNMENT_TYPE").map_or(true, |v| v == "default") {
+            let mut chip_finals = Vec::new();
+            for state in states_in {
+                let chip = PC::construct(config.permute_config.clone());
 
+                let final_state = <PC as PoseidonInstructions<F, F::SpecType, 3, 2>>::permute(
+                    &chip, layouter, &state,
+                )?;
+
+                chip_finals.push(final_state);
+            }
+            chip_finals
+        } else {
+            let chip = PC::construct(config.permute_config.clone());
+            <PC as PoseidonInstructions<F, F::SpecType, 3, 2>>::permute_batch(
+                &chip, layouter, &states_in,
+            )?
+        };
         log::info!("final state took {:?}", final_state_time.elapsed());
 
         layouter.assign_region(
