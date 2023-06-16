@@ -102,8 +102,8 @@ impl<F: CachedConstants, S: Spec<F, WIDTH, RATE>> PoseidonInstructions<F, S, WID
                 if is_first_pass {
                     is_first_pass = false;
                     let col = self.final_state_cells().first().unwrap().column;
-                    region.assign_advice(|| "First pass dummy assign", col, initial_states.len() * 8, || Value::known(F::zero()))?;
-                    return Ok(vec![]);
+                    region.assign_advice(|| "First pass dummy assign", col, initial_states.len() * 8 - 1, || Value::known(F::zero()))?;
+                    return Ok(final_states);
                 }
 
                 for initial_state in initial_states.iter() {
