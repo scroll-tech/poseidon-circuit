@@ -465,6 +465,8 @@ impl<'d, F: Hashable, const STEP: usize, PC: PermuteChip<F, F::SpecType, 3, 2>>
             .chain(std::iter::repeat(None))
             .take(self.calcs);
 
+        assert!(self.calcs >= data.inputs.len() && self.calcs >= data.controls.len());
+
         let mut is_new_sponge = true;
         let mut process_start = 0;
         let mut state: [F; 3] = [F::zero(); 3];
