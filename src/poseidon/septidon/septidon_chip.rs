@@ -113,7 +113,11 @@ impl SeptidonChip {
     }
 
     /// Assign the witness of a permutation into the new region.
-    pub fn assign_permutation<F: CachedConstants>(&self, region: &mut Region<'_, F>, initial_state: [Value<F>; 3]) -> Result<[Value<F>; 3], Error> {
+    pub fn assign_permutation<F: CachedConstants>(
+        &self,
+        region: &mut Region<'_, F>,
+        initial_state: [Value<F>; 3],
+    ) -> Result<[Value<F>; 3], Error> {
         self.assign_permutation_with_offset(region, initial_state, 0)
     }
 
@@ -130,17 +134,22 @@ impl SeptidonChip {
 
         // First half of full rounds.
         for offset in 0..4 {
-            state = self
-                .full_round_chip
-                .assign(region, offset + begin_offset, round_constant(offset), state)?;
+            state = self.full_round_chip.assign(
+                region,
+                offset + begin_offset,
+                round_constant(offset),
+                state,
+            )?;
         }
 
         // First partial round.
         // Its round constant is part of the gate (not a fixed column).
         let middle_offset = 3;
-        state = self
-            .transition_chip
-            .assign_first_partial_state(region, middle_offset + begin_offset, state)?;
+        state = self.transition_chip.assign_first_partial_state(
+            region,
+            middle_offset + begin_offset,
+            state,
+        )?;
 
         // The rest of partial rounds.
         for offset in 0..8 {
@@ -148,16 +157,22 @@ impl SeptidonChip {
             let round_constants = (round_index..round_index + 7)
                 .map(|idx| round_constant(idx)[0])
                 .collect::<Vec<_>>();
-            state = self
-                .partial_round_chip
-                .assign(region, offset + begin_offset, &round_constants, state)?;
+            state = self.partial_round_chip.assign(
+                region,
+                offset + begin_offset,
+                &round_constants,
+                state,
+            )?;
         }
 
         // The second half of full rounds.
         for offset in 4..8 {
-            state =
-                self.full_round_chip
-                    .assign(region, offset + begin_offset, round_constant(offset + 57), state)?;
+            state = self.full_round_chip.assign(
+                region,
+                offset + begin_offset,
+                round_constant(offset + 57),
+                state,
+            )?;
         }
 
         // Put the final state into its place.

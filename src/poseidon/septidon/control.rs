@@ -48,8 +48,17 @@ impl ControlChip {
     }
 
     /// Assign the fixed positions of the last row of permutations.
-    pub fn assign_with_offset<F: FieldExt>(&self, region: &mut Region<'_, F>, begin_offset: usize) -> Result<(), Error> {
-        region.assign_fixed(|| "", self.is_last, 7 + begin_offset, || Value::known(F::one()))?;
+    pub fn assign_with_offset<F: FieldExt>(
+        &self,
+        region: &mut Region<'_, F>,
+        begin_offset: usize,
+    ) -> Result<(), Error> {
+        region.assign_fixed(
+            || "",
+            self.is_last,
+            7 + begin_offset,
+            || Value::known(F::one()),
+        )?;
         Ok(())
     }
 

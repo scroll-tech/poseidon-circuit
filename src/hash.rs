@@ -388,7 +388,7 @@ impl<F: Hashable> PoseidonHashTable<F> {
 
 /// Represent the chip for Poseidon hash table
 #[derive(Debug)]
-pub struct SpongeChip<'d, F: FieldExt, const STEP: usize, PC: Chip<F> + Clone + DebugT> {
+pub struct SpongeChip<'d, F: FieldExt, const STEP: usize, PC: Chip<F> + Clone + DebugT>
 where
     PC::Config: Sync,
 {
@@ -607,6 +607,7 @@ where
         Ok((states_in, states_out))
     }
 
+    #[allow(clippy::type_complexity)]
     fn fill_hash_tbl_body_partial(
         &self,
         region: &mut Region<'_, F>,
@@ -765,6 +766,7 @@ where
     }
 
     /// load the table into circuit under the specified config
+    #[allow(clippy::type_complexity)]
     pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         let config = &self.config;
 
@@ -786,14 +788,13 @@ where
 
         let assignment_type = std::env::var("ASSIGNMENT_TYPE").unwrap_or("default".into());
         let (states_in, states_out) = if assignment_type == "default" {
-            let ret = layouter.assign_region(
+            layouter.assign_region(
                 || "hash table",
                 |mut region| {
                     let begin_offset = self.fill_hash_tbl_custom(&mut region)?;
                     self.fill_hash_tbl_body(&mut region, begin_offset)
                 },
-            )?;
-            ret
+            )?
         } else {
             let hash_table_par_time = Instant::now();
             layouter.assign_region(
@@ -942,7 +943,7 @@ mod tests {
     use super::*;
     use halo2_proofs::halo2curves::bn256::{Bn256, G1Affine};
     use halo2_proofs::halo2curves::group::ff::PrimeField;
-    use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_pk2, keygen_vk, verify_proof};
+    use halo2_proofs::plonk::{create_proof, keygen_pk2, verify_proof};
     use halo2_proofs::poly::commitment::ParamsProver;
     use halo2_proofs::poly::kzg::commitment::{KZGCommitmentScheme, ParamsKZG, ParamsVerifierKZG};
     use halo2_proofs::poly::kzg::multiopen::{ProverSHPLONK, VerifierSHPLONK};

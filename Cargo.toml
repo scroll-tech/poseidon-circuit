@@ -18,7 +18,7 @@ rand = "0.8"
 halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "scroll-dev-0220" }
 
 [features]
-default = ["halo2_proofs/parallel_syn"]
+default = ["halo2_proofs/parallel_syn","short"]
 # Use an implementation using fewer rows (8) per permutation.
 short = []
 # printout the layout of circuits for demo and some unittests

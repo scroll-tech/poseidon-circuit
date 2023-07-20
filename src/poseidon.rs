@@ -45,7 +45,12 @@ pub trait PoseidonInstructions<F: FieldExt, S: Spec<F, T, RATE>, const T: usize,
     Chip<F>
 {
     /// Variable representing the word over which the Poseidon permutation operates.
-    type Word: Clone + fmt::Debug + From<AssignedCell<F, F>> + Into<AssignedCell<F, F>> + Send + Sync;
+    type Word: Clone
+        + fmt::Debug
+        + From<AssignedCell<F, F>>
+        + Into<AssignedCell<F, F>>
+        + Send
+        + Sync;
 
     /// Applies the Poseidon permutation to the given state.
     fn permute(
@@ -60,7 +65,10 @@ pub trait PoseidonInstructions<F: FieldExt, S: Spec<F, T, RATE>, const T: usize,
         layouter: &mut impl Layouter<F>,
         initial_states: &[State<Self::Word, T>],
     ) -> Result<Vec<State<Self::Word, T>>, Error> {
-        initial_states.iter().map(|initial_state| self.permute(layouter, initial_state)).collect::<Result<Vec<_>, Error>>()
+        initial_states
+            .iter()
+            .map(|initial_state| self.permute(layouter, initial_state))
+            .collect::<Result<Vec<_>, Error>>()
     }
 }
 
