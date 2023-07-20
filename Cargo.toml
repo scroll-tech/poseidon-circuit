@@ -10,11 +10,15 @@ halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.gi
 lazy_static = "1.4.0"
 thiserror = "1.0"
 bitvec = "1"
+log = "0.4.0"
+rand_xorshift = "0.3.0"
+rand = "0.8"
 
 [patch."https://github.com/privacy-scaling-explorations/halo2.git"]
 halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "scroll-dev-0220" }
 
 [features]
+default = ["halo2_proofs/parallel_syn"]
 # Use an implementation using fewer rows (8) per permutation.
 short = []
 # printout the layout of circuits for demo and some unittests

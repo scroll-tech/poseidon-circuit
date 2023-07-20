@@ -4,6 +4,8 @@ use crate::poseidon::primitives::{ConstantLengthIden3, Domain, Hash, Spec, Varia
 use halo2_proofs::halo2curves::bn256::Fr;
 use halo2_proofs::plonk::Fixed;
 use halo2_proofs::{arithmetic::FieldExt, circuit::AssignedCell};
+use log;
+use std::time::Instant;
 
 mod chip_long {
     use super::{SpongeChip, SpongeConfig};
@@ -387,6 +389,9 @@ impl<F: Hashable> PoseidonHashTable<F> {
 /// Represent the chip for Poseidon hash table
 #[derive(Debug)]
 pub struct SpongeChip<'d, F: FieldExt, const STEP: usize, PC: Chip<F> + Clone + DebugT> {
+where
+    PC::Config: Sync,
+{
     calcs: usize,
     data: &'d PoseidonHashTable<F>,
     config: SpongeConfig<F, PC>,
@@ -397,6 +402,8 @@ type PermutedStatePair<Word> = (PermutedState<Word>, PermutedState<Word>);
 
 impl<'d, F: Hashable, const STEP: usize, PC: PermuteChip<F, F::SpecType, 3, 2>>
     SpongeChip<'d, F, STEP, PC>
+where
+    PC::Config: Sync,
 {
     ///construct the chip
     pub fn construct(
@@ -596,7 +603,164 @@ impl<'d, F: Hashable, const STEP: usize, PC: PermuteChip<F, F::SpecType, 3, 2>>
 
         // set the last row is "custom", a row both enabled and customed
         // can only fill a padding row ([0, 0] in MPT mode)
-        config.s_custom.enable(region, last_offset)?;
+        self.config.s_custom.enable(region, last_offset)?;
+        Ok((states_in, states_out))
+    }
+
+    fn fill_hash_tbl_body_partial(
+        &self,
+        region: &mut Region<'_, F>,
+        data: &[((Option<&[F; 2]>, Option<&u64>), Option<&F>)],
+        is_first_pass: &mut bool,
+        is_last_sub_region: bool,
+    ) -> Result<PermutedStatePair<PC::Word>, Error> {
+        let config = &self.config;
+        let mut states_in = Vec::new();
+        let mut states_out = Vec::new();
+
+        if *is_first_pass {
+            *is_first_pass = false;
+            region.assign_advice(
+                || "region shape dummy column",
+                // any advice that we access in this region can be used
+                config.hash_table_aux[0],
+                data.len() - 1,
+                || Value::known(F::zero()),
+            )?;
+            *is_first_pass = false;
+            return Ok((states_in, states_out));
+        }
+
+        let hash_helper = F::hasher();
+
+        let mut is_new_sponge = true;
+        let mut process_start = 0;
+        let mut state = [F::zero(); 3];
+
+        for (i, ((inp, control), check)) in data.iter().enumerate() {
+            let control = control.copied().unwrap_or(0u64);
+            let offset = i;
+
+            let control_as_flag = F::from_u128(control as u128 * HASHABLE_DOMAIN_SPEC);
+
+            if is_new_sponge {
+                state[0] = control_as_flag;
+                process_start = offset;
+            }
+
+            let inp = inp
+                .map(|[a, b]| [*a, *b])
+                .unwrap_or_else(|| [F::zero(), F::zero()]);
+
+            state.iter_mut().skip(1).zip(inp).for_each(|(s, inp)| {
+                if is_new_sponge {
+                    *s = inp;
+                } else {
+                    *s += inp;
+                }
+            });
+
+            let state_start = state;
+            hash_helper.permute(&mut state); //here we calculate the hash
+
+            //and sanity check ...
+            if let Some(ck) = check {
+                assert_eq!(
+                    **ck, state[0],
+                    "hash output not match with expected at {offset}"
+                );
+            }
+
+            let current_hash = state[0];
+
+            //assignment ...
+            region.assign_fixed(
+                || "assign q_enable",
+                self.config.q_enable,
+                offset,
+                || Value::known(F::one()),
+            )?;
+
+            let c_start = [0; 3]
+                .into_iter()
+                .enumerate()
+                .map(|(i, _)| {
+                    region.assign_advice(
+                        || format!("state input {i}_{offset}"),
+                        config.hash_table_aux[i],
+                        offset,
+                        || Value::known(state_start[i]),
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+
+            let c_end = [5, 3, 4]
+                .into_iter()
+                .enumerate()
+                .map(|(i, j)| {
+                    region.assign_advice(
+                        || format!("state output {i}_{offset}"),
+                        config.hash_table_aux[j],
+                        offset,
+                        || Value::known(state[i]),
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+
+            for (tip, col, val) in [
+                ("hash input first", config.hash_table[1], inp[0]),
+                ("hash input second", config.hash_table[2], inp[1]),
+                ("state input control", config.hash_table[3], control_as_flag),
+                (
+                    "state beginning flag",
+                    config.hash_table[4],
+                    if is_new_sponge { F::one() } else { F::zero() },
+                ),
+                (
+                    "state input control_aux",
+                    config.control_aux,
+                    control_as_flag.invert().unwrap_or_else(F::zero),
+                ),
+                (
+                    "state continue control",
+                    config.s_sponge_continue,
+                    if is_new_sponge { F::zero() } else { F::one() },
+                ),
+            ] {
+                region.assign_advice(
+                    || format!("{tip}_{offset}"),
+                    col,
+                    offset,
+                    || Value::known(val),
+                )?;
+            }
+
+            //we directly specify the init state of permutation
+            let c_start_arr: [_; 3] = c_start.try_into().expect("same size");
+            states_in.push(c_start_arr.map(PC::Word::from));
+            let c_end_arr: [_; 3] = c_end.try_into().expect("same size");
+            states_out.push(c_end_arr.map(PC::Word::from));
+
+            is_new_sponge = control <= STEP as u64;
+
+            //fill all the hash_table[0] with result hash
+            if is_new_sponge {
+                (process_start..=offset).try_for_each(|ith| {
+                    region
+                        .assign_advice(
+                            || format!("hash index_{ith}"),
+                            config.hash_table[0],
+                            ith,
+                            || Value::known(current_hash),
+                        )
+                        .map(|_| ())
+                })?;
+            }
+        }
+
+        if is_last_sub_region {
+            self.config.s_custom.enable(region, data.len() - 1)?;
+        }
         Ok((states_in, states_out))
     }
 
@@ -620,24 +784,121 @@ impl<'d, F: Hashable, const STEP: usize, PC: PermuteChip<F, F::SpecType, 3, 2>>
             },
         )?;
 
-        let (states_in, states_out) = layouter.assign_region(
-            || "hash table",
-            |mut region| {
-                let offset = self.fill_hash_tbl_custom(&mut region)?;
-                self.fill_hash_tbl_body(&mut region, offset)
-            },
-        )?;
-
-        let mut chip_finals = Vec::new();
-        for state in states_in {
-            let chip = PC::construct(config.permute_config.clone());
-
-            let final_state = <PC as PoseidonInstructions<F, F::SpecType, 3, 2>>::permute(
-                &chip, layouter, &state,
+        let assignment_type = std::env::var("ASSIGNMENT_TYPE").unwrap_or("default".into());
+        let (states_in, states_out) = if assignment_type == "default" {
+            let ret = layouter.assign_region(
+                || "hash table",
+                |mut region| {
+                    let begin_offset = self.fill_hash_tbl_custom(&mut region)?;
+                    self.fill_hash_tbl_body(&mut region, begin_offset)
+                },
             )?;
+            ret
+        } else {
+            let hash_table_par_time = Instant::now();
+            layouter.assign_region(
+                || "hash table custom",
+                |mut region| self.fill_hash_tbl_custom(&mut region),
+            )?;
+            let data = self.data;
 
-            chip_finals.push(final_state);
-        }
+            let inputs_i = data
+                .inputs
+                .iter()
+                .map(Some)
+                .chain(std::iter::repeat(None))
+                .take(self.calcs);
+            let controls_i = data
+                .controls
+                .iter()
+                .map(Some)
+                .chain(std::iter::repeat(None))
+                .take(self.calcs);
+
+            let checks_i = data
+                .checks
+                .iter()
+                .map(|i| i.as_ref())
+                .chain(std::iter::repeat(None))
+                .take(self.calcs);
+
+            let chunks_count = std::thread::available_parallelism()
+                .map(|e| e.get())
+                .unwrap_or(32);
+            let min_len = self.calcs / chunks_count + 1;
+            let mut chunk_len = 0;
+
+            let data: Vec<((Option<&[F; 2]>, Option<&u64>), Option<&F>)> =
+                inputs_i.zip(controls_i).zip(checks_i).collect();
+
+            // Split `data` into chunks and ensure each chunks is longer thant `min_len` and ends
+            // with a new sponge.
+            //
+            // Each chunk would be processed in a separate thread.
+            let assignments = data
+                .group_by(|((_, control), _), _| {
+                    chunk_len += 1;
+                    if control.copied().unwrap_or(0) > STEP as u64 || chunk_len < min_len {
+                        true
+                    } else {
+                        chunk_len = 0;
+                        false
+                    }
+                })
+                .collect::<Vec<_>>();
+            let assignments_len = assignments.len();
+            let assignments = assignments
+                .into_iter()
+                .enumerate()
+                .map(|(i, data)| {
+                    let mut is_first_pass = true;
+                    let is_last_sub_region = i == assignments_len - 1;
+                    move |mut region: Region<'_, F>| -> Result<PermutedStatePair<PC::Word>, Error> {
+                        self.fill_hash_tbl_body_partial(
+                            &mut region,
+                            data,
+                            &mut is_first_pass,
+                            is_last_sub_region,
+                        )
+                    }
+                })
+                .collect::<Vec<_>>();
+            let ret = layouter.assign_regions(|| "hash table", assignments)?;
+
+            let mut states_in = vec![];
+            let mut states_out = vec![];
+            for (s_in, s_out) in ret.into_iter() {
+                states_in.extend(s_in);
+                states_out.extend(s_out);
+            }
+            log::info!(
+                "hash table parallel version took {:?}",
+                hash_table_par_time.elapsed()
+            );
+            (states_in, states_out)
+        };
+
+        let final_state_time = Instant::now();
+
+        let chip_finals = if std::env::var("ASSIGNMENT_TYPE").map_or(true, |v| v == "default") {
+            let mut chip_finals = Vec::new();
+            for state in states_in {
+                let chip = PC::construct(config.permute_config.clone());
+
+                let final_state = <PC as PoseidonInstructions<F, F::SpecType, 3, 2>>::permute(
+                    &chip, layouter, &state,
+                )?;
+
+                chip_finals.push(final_state);
+            }
+            chip_finals
+        } else {
+            let chip = PC::construct(config.permute_config.clone());
+            <PC as PoseidonInstructions<F, F::SpecType, 3, 2>>::permute_batch(
+                &chip, layouter, &states_in,
+            )?
+        };
+        log::info!("final state took {:?}", final_state_time.elapsed());
 
         layouter.assign_region(
             || "final state dummy",
@@ -658,6 +919,8 @@ impl<'d, F: Hashable, const STEP: usize, PC: PermuteChip<F, F::SpecType, 3, 2>>
 
 impl<F: FieldExt, const STEP: usize, PC: Chip<F> + Clone + DebugT> Chip<F>
     for SpongeChip<'_, F, STEP, PC>
+where
+    PC::Config: Sync,
 {
     type Config = SpongeConfig<F, PC>;
     type Loaded = PoseidonHashTable<F>;
@@ -677,7 +940,16 @@ mod tests {
     use crate::poseidon::{Pow5Chip, SeptidonChip};
 
     use super::*;
+    use halo2_proofs::halo2curves::bn256::{Bn256, G1Affine};
     use halo2_proofs::halo2curves::group::ff::PrimeField;
+    use halo2_proofs::plonk::{create_proof, keygen_pk, keygen_pk2, keygen_vk, verify_proof};
+    use halo2_proofs::poly::commitment::ParamsProver;
+    use halo2_proofs::poly::kzg::commitment::{KZGCommitmentScheme, ParamsKZG, ParamsVerifierKZG};
+    use halo2_proofs::poly::kzg::multiopen::{ProverSHPLONK, VerifierSHPLONK};
+    use halo2_proofs::poly::kzg::strategy::SingleStrategy;
+    use halo2_proofs::transcript::{
+        Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
+    };
     use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
 
     #[test]
@@ -743,7 +1015,10 @@ mod tests {
         }
     }
 
-    impl<PC: PermuteChip<Fr, <Fr as Hashable>::SpecType, 3, 2>> Circuit<Fr> for TestCircuit<PC> {
+    impl<PC: PermuteChip<Fr, <Fr as Hashable>::SpecType, 3, 2>> Circuit<Fr> for TestCircuit<PC>
+    where
+        PC::Config: Sync,
+    {
         type Config = (SpongeConfig<Fr, PC>, usize);
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -808,7 +1083,10 @@ mod tests {
         poseidon_hash_circuit_impl::<SeptidonChip>();
     }
 
-    fn poseidon_hash_circuit_impl<PC: PermuteChip<Fr, <Fr as Hashable>::SpecType, 3, 2>>() {
+    fn poseidon_hash_circuit_impl<PC: PermuteChip<Fr, <Fr as Hashable>::SpecType, 3, 2>>()
+    where
+        PC::Config: Sync,
+    {
         let message1 = [
             Fr::from_str_vartime("1").unwrap(),
             Fr::from_str_vartime("2").unwrap(),
@@ -834,7 +1112,10 @@ mod tests {
         poseidon_var_len_hash_circuit_impl::<SeptidonChip>();
     }
 
-    fn poseidon_var_len_hash_circuit_impl<PC: PermuteChip<Fr, <Fr as Hashable>::SpecType, 3, 2>>() {
+    fn poseidon_var_len_hash_circuit_impl<PC: PermuteChip<Fr, <Fr as Hashable>::SpecType, 3, 2>>()
+    where
+        PC::Config: Sync,
+    {
         let message1 = [
             Fr::from_str_vartime("1").unwrap(),
             Fr::from_str_vartime("2").unwrap(),
@@ -873,5 +1154,83 @@ mod tests {
         });
         let prover = MockProver::run(k, &circuit, vec![]).unwrap();
         assert_eq!(prover.verify(), Ok(()));
+    }
+
+    #[test]
+    fn poseidon_parallel_synthesis() {
+        poseidon_parallel_synthesis_impl::<Pow5Chip<Fr, 3, 2>>();
+        poseidon_parallel_synthesis_impl::<SeptidonChip>();
+    }
+
+    fn poseidon_parallel_synthesis_impl<PC: PermuteChip<Fr, <Fr as Hashable>::SpecType, 3, 2>>()
+    where
+        PC::Config: Sync,
+    {
+        use rand::SeedableRng;
+        use rand_xorshift::XorShiftRng;
+
+        let message1 = [
+            Fr::from_str_vartime("1").unwrap(),
+            Fr::from_str_vartime("2").unwrap(),
+        ];
+
+        let message2 = [Fr::from_str_vartime("50331648").unwrap(), Fr::zero()];
+
+        let k = 8;
+
+        let mut rng = XorShiftRng::from_seed([
+            0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
+            0xbc, 0xe5,
+        ]);
+        let general_params = ParamsKZG::<Bn256>::setup(k, &mut rng);
+        let verifier_params: ParamsVerifierKZG<Bn256> = general_params.verifier_params().clone();
+
+        let circuit = TestCircuit::<PC>::new(PoseidonHashTable {
+            inputs: vec![message1, message2],
+            controls: vec![45, 13],
+            //checks: vec![None, Some(Fr::from_str_vartime("15002881182751877599173281392790087382867290792048832034781070831698029191486").unwrap())],
+            ..Default::default()
+        });
+
+        std::env::set_var("ASSIGNMENT_TYPE", "default");
+        let pk = keygen_pk2(&general_params, &circuit).expect("keygen_pk shouldn't fail");
+
+        std::env::set_var("ASSIGNMENT_TYPE", "parallel");
+        let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
+        create_proof::<
+            KZGCommitmentScheme<Bn256>,
+            ProverSHPLONK<'_, Bn256>,
+            Challenge255<G1Affine>,
+            XorShiftRng,
+            Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
+            TestCircuit<PC>,
+        >(
+            &general_params,
+            &pk,
+            &[circuit],
+            &[&[]],
+            rng,
+            &mut transcript,
+        )
+        .expect("proof generation should not fail");
+        let proof = transcript.finalize();
+
+        let mut verifier_transcript = Blake2bRead::<_, G1Affine, Challenge255<_>>::init(&proof[..]);
+        std::env::set_var("ASSIGNMENT_TYPE", "default");
+        let strategy = SingleStrategy::new(&general_params);
+        verify_proof::<
+            KZGCommitmentScheme<Bn256>,
+            VerifierSHPLONK<'_, Bn256>,
+            Challenge255<G1Affine>,
+            Blake2bRead<&[u8], G1Affine, Challenge255<G1Affine>>,
+            SingleStrategy<'_, Bn256>,
+        >(
+            &verifier_params,
+            pk.get_vk(),
+            strategy,
+            &[&[]],
+            &mut verifier_transcript,
+        )
+        .expect("failed to verify bench circuit");
     }
 }

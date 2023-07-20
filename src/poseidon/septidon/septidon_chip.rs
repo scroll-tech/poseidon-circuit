@@ -112,13 +112,19 @@ impl SeptidonChip {
         })
     }
 
-    /// Assign the witness of a permutation into the given region.
-    pub fn assign_permutation<F: CachedConstants>(
+    /// Assign the witness of a permutation into the new region.
+    pub fn assign_permutation<F: CachedConstants>(&self, region: &mut Region<'_, F>, initial_state: [Value<F>; 3]) -> Result<[Value<F>; 3], Error> {
+        self.assign_permutation_with_offset(region, initial_state, 0)
+    }
+
+    /// Assign the witness of a permutation into the existent region.
+    pub fn assign_permutation_with_offset<F: CachedConstants>(
         &self,
         region: &mut Region<'_, F>,
         initial_state: [Value<F>; 3],
+        begin_offset: usize,
     ) -> Result<[Value<F>; 3], Error> {
-        self.control_chip.assign(region)?;
+        self.control_chip.assign_with_offset(region, begin_offset)?;
 
         let mut state = initial_state;
 
@@ -126,7 +132,7 @@ impl SeptidonChip {
         for offset in 0..4 {
             state = self
                 .full_round_chip
-                .assign(region, offset, round_constant(offset), state)?;
+                .assign(region, offset + begin_offset, round_constant(offset), state)?;
         }
 
         // First partial round.
@@ -134,7 +140,7 @@ impl SeptidonChip {
         let middle_offset = 3;
         state = self
             .transition_chip
-            .assign_first_partial_state(region, middle_offset, state)?;
+            .assign_first_partial_state(region, middle_offset + begin_offset, state)?;
 
         // The rest of partial rounds.
         for offset in 0..8 {
@@ -144,20 +150,20 @@ impl SeptidonChip {
                 .collect::<Vec<_>>();
             state = self
                 .partial_round_chip
-                .assign(region, offset, &round_constants, state)?;
+                .assign(region, offset + begin_offset, &round_constants, state)?;
         }
 
         // The second half of full rounds.
         for offset in 4..8 {
             state =
                 self.full_round_chip
-                    .assign(region, offset, round_constant(offset + 57), state)?;
+                    .assign(region, offset + begin_offset, round_constant(offset + 57), state)?;
         }
 
         // Put the final state into its place.
         let final_offset = 7;
         self.transition_chip
-            .assign_final_state(region, final_offset, state)?;
+            .assign_final_state(region, final_offset + begin_offset, state)?;
 
         Ok(state)
     }
