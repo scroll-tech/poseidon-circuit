@@ -34,7 +34,7 @@ impl Circuit<Fp> for TestCircuit {
     }
 
     fn configure(meta: &mut ConstraintSystem<Fp>) -> Self::Config {
-        let hash_tbl = [0; 5].map(|_| meta.advice_column());
+        let hash_tbl = [0; 6].map(|_| meta.advice_column());
         let q_enable = meta.fixed_column();
         SpongeConfig::configure_sub(meta, (q_enable, hash_tbl), DEFAULT_STEP)
     }

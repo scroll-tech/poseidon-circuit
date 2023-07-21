@@ -460,7 +460,9 @@ impl<F: FieldExt, S: Spec<F, T, RATE>, const T: usize, const RATE: usize, const 
     Hash<F, S, ConstantLengthIden3<L>, T, RATE>
 {
     /// Hashes the given input.
-    pub fn hash(mut self, message: [F; L]) -> F {
+    pub fn hash(mut self, message: [F; L], domain: F) -> F {
+        // notice iden3 domain has no initial capacity element so the domain is updated here
+        self.sponge.update_capacity(domain);
         for value in message
             .into_iter()
             .chain(<ConstantLength<L> as Domain<F, RATE>>::padding(L))

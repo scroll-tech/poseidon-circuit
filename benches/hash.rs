@@ -21,7 +21,7 @@ macro_rules! hashes {
         fn $fname(bench: &mut Bencher) {
             bench.iter(|| {
                 Hash::<Fr, P128Pow5T3<Fr>, ConstantLengthIden3<$n>, 3, 2>::init()
-                    .hash(Vec::from(&RNDFRS.as_slice()[..$n]).try_into().unwrap())
+                    .hash(Vec::from(&RNDFRS.as_slice()[..$n]).try_into().unwrap(), Fr::zero())
             });
         }
     };

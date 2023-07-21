@@ -52,7 +52,13 @@ pub trait Hashable: Hashablebase {
     type DomainType: Domain<Self, 2>;
 
     /// execute hash for any sequence of fields
-    fn hash(inp: [Self; 2]) -> Self;
+    #[deprecated]
+    fn hash(inp: [Self; 2]) -> Self {
+        Self::hash_with_domain(inp, Self::zero())
+    }
+
+    /// execute hash for any sequence of fields, with domain being specified
+    fn hash_with_domain(inp: [Self; 2], domain: Self) -> Self;
     /// obtain the rows consumed by each circuit block
     fn hash_block_size() -> usize {
         #[cfg(feature = "short")]
@@ -96,8 +102,8 @@ impl Hashable for Fr {
     type SpecType = HashSpec<Self>;
     type DomainType = ConstantLengthIden3<2>;
 
-    fn hash(inp: [Self; 2]) -> Self {
-        Self::hasher().hash(inp)
+    fn hash_with_domain(inp: [Self; 2], domain: Self) -> Self {
+        Self::hasher().hash(inp, domain)
     }
 }
 
@@ -122,7 +128,7 @@ use std::fmt::Debug as DebugT;
 #[derive(Clone, Debug)]
 pub struct SpongeConfig<F: FieldExt, PC: Chip<F> + Clone + DebugT> {
     permute_config: PC::Config,
-    hash_table: [Column<Advice>; 5],
+    hash_table: [Column<Advice>; 6],
     hash_table_aux: [Column<Advice>; 6],
     control_aux: Column<Advice>,
     s_sponge_continue: Column<Advice>,
@@ -135,30 +141,24 @@ pub struct SpongeConfig<F: FieldExt, PC: Chip<F> + Clone + DebugT> {
 
 impl<F: Hashable, PC: PermuteChip<F, F::SpecType, 3, 2>> SpongeConfig<F, PC> {
     /// obtain the commitment index of hash table
-    pub fn commitment_index(&self) -> [usize; 5] {
+    pub fn commitment_index(&self) -> [usize; 6] {
         self.hash_table.map(|col| col.index())
     }
 
     /// obtain the hash_table columns
-    pub fn hash_tbl_cols(&self) -> [Column<Advice>; 5] {
+    pub fn hash_tbl_cols(&self) -> [Column<Advice>; 6] {
         self.hash_table
     }
 
     /// build configure for sub circuit
     pub fn configure_sub(
         meta: &mut ConstraintSystem<F>,
-        (q_enable, hash_table): (Column<Fixed>, [Column<Advice>; 5]),
+        (q_enable, hash_table): (Column<Fixed>, [Column<Advice>; 6]),
         step: usize,
     ) -> Self {
         let s_custom = meta.complex_selector();
 
-        let hash_table_aux = [0, 1, 2, 3, 4, 5].map(|idx| {
-            if idx < 5 {
-                meta.advice_column()
-            } else {
-                meta.advice_column_in(halo2_proofs::plonk::SecondPhase)
-            }
-        });
+        let hash_table_aux = [0;6].map(|_| meta.advice_column());
         for col in hash_table_aux.iter().chain(hash_table[0..1].iter()) {
             meta.enable_equality(*col);
         }
@@ -174,7 +174,8 @@ impl<F: Hashable, PC: PermuteChip<F, F::SpecType, 3, 2>> SpongeConfig<F, PC> {
         let hash_out = hash_table_aux[5];
         let hash_inp = &hash_table[1..3];
         let hash_index = hash_table[0];
-        let header_mark = hash_table[4];
+        let domain_spec = hash_table[4];
+        let header_mark = hash_table[5];
 
         meta.create_gate("custom row", |meta| {
             let q_custom = meta.query_selector(s_custom);
@@ -275,9 +276,10 @@ impl<F: Hashable, PC: PermuteChip<F, F::SpecType, 3, 2>> SpongeConfig<F, PC> {
 
             assert_eq!(hash_inp.len(), ret.len());
 
+            let doman_spec = meta.query_advice(domain_spec, Rotation::cur());
             let inp_hash = meta.query_advice(state_in[0], Rotation::cur());
             let inp_hash_prev = meta.query_advice(hash_out, Rotation::prev());
-            let inp_hash_init = meta.query_advice(control, Rotation::cur());
+            let inp_hash_init = meta.query_advice(control, Rotation::cur()) + doman_spec.clone();
 
             // hash output: must inherit prev state or apply current control flag (for new hash)
             ret.push(
@@ -285,9 +287,11 @@ impl<F: Hashable, PC: PermuteChip<F, F::SpecType, 3, 2>> SpongeConfig<F, PC> {
                     * (Expression::Constant(F::one()) - s_continue_hash.clone())
                     * (inp_hash.clone() - inp_hash_init),
             );
-            ret.push(q_enable * s_continue_hash * (inp_hash - inp_hash_prev));
+            ret.push(q_enable * s_continue_hash * (inp_hash - inp_hash_prev - doman_spec));
             ret
         });
+
+        // TODO: should we use range check on domain?
 
         Self {
             permute_config: PC::configure(meta),
@@ -310,6 +314,8 @@ pub struct PoseidonHashTable<F> {
     pub inputs: Vec<[F; 2]>,
     /// the control flag for each permutation
     pub controls: Vec<u64>,
+    /// the specified domain each permutation, or 0 if not specified
+    pub domain: Vec<Option<F>>,
     /// the expected hash output for checking
     pub checks: Vec<Option<F>>,
 }
@@ -464,6 +470,12 @@ where
             .map(Some)
             .chain(std::iter::repeat(None))
             .take(self.calcs);
+        let domains_i = data
+            .domain
+            .iter()
+            .map(|i| i.as_ref())
+            .chain(std::iter::repeat(None))
+            .take(self.calcs);
 
         let checks_i = data
             .checks
@@ -479,15 +491,16 @@ where
         let mut state: [F; 3] = [F::zero(); 3];
         let mut last_offset = 0;
 
-        for (i, ((inp, control), check)) in inputs_i.zip(controls_i).zip(checks_i).enumerate() {
+        for (i, ((inp, control), (domain, check))) in inputs_i.zip(controls_i).zip(domains_i.zip(checks_i)).enumerate() {
             let control = control.copied().unwrap_or(0);
+            let domain = domain.copied().unwrap_or_else(F::zero);
             let offset = i + begin_offset;
             last_offset = offset;
 
             let control_as_flag = F::from_u128(control as u128 * HASHABLE_DOMAIN_SPEC);
 
             if is_new_sponge {
-                state[0] = control_as_flag;
+                state[0] = control_as_flag + domain;
                 process_start = offset;
             }
 
@@ -554,9 +567,10 @@ where
                 ("hash input first", config.hash_table[1], inp[0]),
                 ("hash input second", config.hash_table[2], inp[1]),
                 ("state input control", config.hash_table[3], control_as_flag),
+                ("domain spec", config.hash_table[4], domain),
                 (
                     "state beginning flag",
-                    config.hash_table[4],
+                    config.hash_table[5],
                     if is_new_sponge { F::one() } else { F::zero() },
                 ),
                 (
@@ -611,7 +625,7 @@ where
     fn fill_hash_tbl_body_partial(
         &self,
         region: &mut Region<'_, F>,
-        data: &[((Option<&[F; 2]>, Option<&u64>), Option<&F>)],
+        data: &[((Option<&[F; 2]>, Option<&u64>), (Option<&F>, Option<&F>))],
         is_first_pass: &mut bool,
         is_last_sub_region: bool,
     ) -> Result<PermutedStatePair<PC::Word>, Error> {
@@ -638,8 +652,9 @@ where
         let mut process_start = 0;
         let mut state = [F::zero(); 3];
 
-        for (i, ((inp, control), check)) in data.iter().enumerate() {
+        for (i, ((inp, control), (domain, check))) in data.iter().enumerate() {
             let control = control.copied().unwrap_or(0u64);
+            let domain = domain.copied().unwrap_or_else(F::zero);
             let offset = i;
 
             let control_as_flag = F::from_u128(control as u128 * HASHABLE_DOMAIN_SPEC);
@@ -712,9 +727,10 @@ where
                 ("hash input first", config.hash_table[1], inp[0]),
                 ("hash input second", config.hash_table[2], inp[1]),
                 ("state input control", config.hash_table[3], control_as_flag),
+                ("domain spec", config.hash_table[4], domain),
                 (
                     "state beginning flag",
-                    config.hash_table[4],
+                    config.hash_table[5],
                     if is_new_sponge { F::one() } else { F::zero() },
                 ),
                 (
@@ -815,6 +831,12 @@ where
                 .map(Some)
                 .chain(std::iter::repeat(None))
                 .take(self.calcs);
+            let domains_i = data
+                .domain
+                .iter()
+                .map(|i| i.as_ref())
+                .chain(std::iter::repeat(None))
+                .take(self.calcs);
 
             let checks_i = data
                 .checks
@@ -829,8 +851,8 @@ where
             let min_len = self.calcs / chunks_count + 1;
             let mut chunk_len = 0;
 
-            let data: Vec<((Option<&[F; 2]>, Option<&u64>), Option<&F>)> =
-                inputs_i.zip(controls_i).zip(checks_i).collect();
+            let data: Vec<((Option<&[F; 2]>, Option<&u64>), (Option<&F>,Option<&F>))> =
+                inputs_i.zip(controls_i).zip(domains_i.zip(checks_i)).collect();
 
             // Split `data` into chunks and ensure each chunks is longer thant `min_len` and ends
             // with a new sponge.
@@ -958,7 +980,7 @@ mod tests {
         let b1: Fr = Fr::from_str_vartime("1").unwrap();
         let b2: Fr = Fr::from_str_vartime("2").unwrap();
 
-        let h = Fr::hash([b1, b2]);
+        let h = Fr::hash_with_domain([b1, b2], Fr::zero());
         assert_eq!(
             format!("{:?}", h),
             "0x115cc0f5e7d690413df64c6b9662e9cf2a3617f2743245519e19607a4417189a" // "7853200120776062878684798364095072458815029376092732009249414926327459813530"
@@ -1029,7 +1051,7 @@ mod tests {
 
         fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
             let q_enable = meta.fixed_column();
-            let hash_tbl = [0; 5].map(|_| meta.advice_column());
+            let hash_tbl = [0; 6].map(|_| meta.advice_column());
             (
                 SpongeConfig::configure_sub(meta, (q_enable, hash_tbl), TEST_STEP),
                 4,
