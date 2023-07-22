@@ -158,7 +158,7 @@ impl<F: Hashable, PC: PermuteChip<F, F::SpecType, 3, 2>> SpongeConfig<F, PC> {
     ) -> Self {
         let s_custom = meta.complex_selector();
 
-        let hash_table_aux = [0;6].map(|_| meta.advice_column());
+        let hash_table_aux = [0; 6].map(|_| meta.advice_column());
         for col in hash_table_aux.iter().chain(hash_table[0..1].iter()) {
             meta.enable_equality(*col);
         }
@@ -322,12 +322,14 @@ pub struct PoseidonHashTable<F> {
 
 impl<F: FieldExt> PoseidonHashTable<F> {
     /// Add common inputs
+    #[deprecated]
     pub fn constant_inputs<'d>(&mut self, src: impl IntoIterator<Item = &'d [F; 2]>) {
         let mut new_inps: Vec<_> = src.into_iter().copied().collect();
         self.inputs.append(&mut new_inps);
     }
 
     /// Add common inputs with expected hash as check
+    #[deprecated]
     pub fn constant_inputs_with_check<'d>(&mut self, src: impl IntoIterator<Item = &'d (F, F, F)>) {
         // align input and checks
         self.checks.resize(self.inputs.len(), None);
@@ -335,6 +337,21 @@ impl<F: FieldExt> PoseidonHashTable<F> {
         for (a, b, c) in src {
             self.inputs.push([*a, *b]);
             self.checks.push(Some(*c));
+            self.controls.push(0);
+        }
+    }
+
+    /// Add fixed 2-fied inputs with domain spec and expected hash (as option)
+    pub fn fixed_inputs<'d>(&mut self, src: impl IntoIterator<Item = &'d ([F; 2], F, Option<F>)>) {
+        // align input and checks
+        self.checks.resize(self.inputs.len(), None);
+        self.domain.resize(self.inputs.len(), None);
+        self.controls.resize(self.inputs.len(), 0);
+
+        for (inp, domain_spec, checks) in src.into_iter().copied() {
+            self.inputs.push(inp);
+            self.checks.push(checks);
+            self.domain.push(Some(domain_spec));
             self.controls.push(0);
         }
     }
@@ -375,6 +392,7 @@ impl<F: FieldExt> PoseidonHashTable<F> {
         assert_eq!(self.inputs.len(), self.controls.len());
         self.checks.resize(self.inputs.len() - 1, None);
         self.checks.push(check);
+        self.domain.resize(self.inputs.len(), None);
     }
 
     /// return the row which poseidon table use (notice it maybe much smaller
@@ -491,7 +509,11 @@ where
         let mut state: [F; 3] = [F::zero(); 3];
         let mut last_offset = 0;
 
-        for (i, ((inp, control), (domain, check))) in inputs_i.zip(controls_i).zip(domains_i.zip(checks_i)).enumerate() {
+        for (i, ((inp, control), (domain, check))) in inputs_i
+            .zip(controls_i)
+            .zip(domains_i.zip(checks_i))
+            .enumerate()
+        {
             let control = control.copied().unwrap_or(0);
             let domain = domain.copied().unwrap_or_else(F::zero);
             let offset = i + begin_offset;
@@ -851,8 +873,10 @@ where
             let min_len = self.calcs / chunks_count + 1;
             let mut chunk_len = 0;
 
-            let data: Vec<((Option<&[F; 2]>, Option<&u64>), (Option<&F>,Option<&F>))> =
-                inputs_i.zip(controls_i).zip(domains_i.zip(checks_i)).collect();
+            let data: Vec<((Option<&[F; 2]>, Option<&u64>), (Option<&F>, Option<&F>))> = inputs_i
+                .zip(controls_i)
+                .zip(domains_i.zip(checks_i))
+                .collect();
 
             // Split `data` into chunks and ensure each chunks is longer thant `min_len` and ends
             // with a new sponge.
@@ -984,6 +1008,12 @@ mod tests {
         assert_eq!(
             format!("{:?}", h),
             "0x115cc0f5e7d690413df64c6b9662e9cf2a3617f2743245519e19607a4417189a" // "7853200120776062878684798364095072458815029376092732009249414926327459813530"
+        );
+
+        let h = Fr::hash_with_domain([b1, b2], Fr::from(256u64));
+        assert_eq!(
+            format!("{:?}", h),
+            "0x05390df727dcce2ddb8faa3acb4798ad4e95b74de05e5cc7e40496658913ae85" // "2362370911616048355006851495576377379220050231129891536935411970097789775493"
         );
     }
 

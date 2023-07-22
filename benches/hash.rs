@@ -20,8 +20,10 @@ macro_rules! hashes {
     ( $fname:ident, $n:expr ) => {
         fn $fname(bench: &mut Bencher) {
             bench.iter(|| {
-                Hash::<Fr, P128Pow5T3<Fr>, ConstantLengthIden3<$n>, 3, 2>::init()
-                    .hash(Vec::from(&RNDFRS.as_slice()[..$n]).try_into().unwrap(), Fr::zero())
+                Hash::<Fr, P128Pow5T3<Fr>, ConstantLengthIden3<$n>, 3, 2>::init().hash(
+                    Vec::from(&RNDFRS.as_slice()[..$n]).try_into().unwrap(),
+                    Fr::zero(),
+                )
             });
         }
     };
