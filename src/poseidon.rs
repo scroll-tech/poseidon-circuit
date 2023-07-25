@@ -60,6 +60,7 @@ pub trait PoseidonInstructions<F: FieldExt, S: Spec<F, T, RATE>, const T: usize,
     ) -> Result<State<Self::Word, T>, Error>;
 
     /// Applies the Poseidon permutation to the given states.
+    #[cfg(feature = "parallel_syn")]
     fn permute_batch(
         &self,
         layouter: &mut impl Layouter<F>,
