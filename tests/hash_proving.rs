@@ -17,7 +17,7 @@ use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},
     plonk::{Circuit, ConstraintSystem, Error},
 };
-use poseidon_circuit::poseidon::Pow5Chip;
+//use poseidon_circuit::poseidon::Pow5Chip;
 use poseidon_circuit::{hash::*, DEFAULT_STEP};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -26,7 +26,7 @@ struct TestCircuit(PoseidonHashTable<Fp>, usize);
 
 // test circuit derived from table data
 impl Circuit<Fp> for TestCircuit {
-    type Config = SpongeConfig<Fp, Pow5Chip<Fp, 3, 2>>;
+    type Config = PoseidonHashConfig<Fp>;
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
@@ -44,8 +44,7 @@ impl Circuit<Fp> for TestCircuit {
         config: Self::Config,
         mut layouter: impl Layouter<Fp>,
     ) -> Result<(), Error> {
-        let chip =
-            SpongeChip::<Fp, DEFAULT_STEP, Pow5Chip<Fp, 3, 2>>::construct(config, &self.0, self.1);
+        let chip = PoseidonHashChip::<Fp, DEFAULT_STEP>::construct(config, &self.0, self.1);
         chip.load(&mut layouter)
     }
 }

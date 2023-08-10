@@ -1,7 +1,7 @@
 use super::loop_chip::LoopBody;
-use super::params::{mds, CachedConstants};
+use super::params::{calc::matmul, CachedConstants};
 use super::state::{Cell, SBox};
-use super::util::{join_values, matmul, query, split_values};
+use super::util::{join_values, query, split_values};
 use halo2_proofs::circuit::{Region, Value};
 //use halo2_proofs::halo2curves::bn256::Fr as F;
 use halo2_proofs::plonk::{ConstraintSystem, Constraints, Error, Expression, VirtualCells};
@@ -82,7 +82,7 @@ impl SeptupleRoundChip {
         input: &[Expression<F>; 3],
     ) -> [Expression<F>; 3] {
         let sbox_out = [sbox.output_expr(meta), input[1].clone(), input[2].clone()];
-        matmul::expr(mds(), sbox_out)
+        matmul::expr(sbox_out)
     }
 
     pub fn input(&self) -> [Cell; 3] {
@@ -111,7 +111,7 @@ impl SeptupleRoundChip {
             // Assign the following S-Boxes.
             state[0] = sbox.assign(region, offset, round_constants[i], state[0])?;
             // Apply the matrix.
-            state = split_values(join_values(state).map(|s| matmul::value(mds(), s)));
+            state = split_values(join_values(state).map(|s| matmul::value(s)));
             Ok(())
         };
 

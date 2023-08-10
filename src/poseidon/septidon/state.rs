@@ -1,4 +1,4 @@
-use super::params;
+use super::params::{self, CachedConstants};
 use halo2_proofs::circuit::{Region, Value};
 //use halo2_proofs::halo2curves::bn256::Fr as F;
 use halo2_proofs::arithmetic::FieldExt;
@@ -72,7 +72,7 @@ impl SBox {
     }
 
     /// Assign the witness of the input.
-    pub fn assign<F: FieldExt>(
+    pub fn assign<F: CachedConstants>(
         &self,
         region: &mut Region<'_, F>,
         offset: usize,
@@ -91,7 +91,7 @@ impl SBox {
             offset + self.input.region_offset(),
             || input,
         )?;
-        let output = input.map(|i| params::sbox::value(i, round_constant));
+        let output = input.map(|i| params::calc::sbox::value(i, round_constant));
         Ok(output)
     }
 
@@ -103,10 +103,10 @@ impl SBox {
         meta.query_fixed(self.round_constant, Rotation(self.input.offset))
     }
 
-    pub fn output_expr<F: FieldExt>(&self, meta: &mut VirtualCells<'_, F>) -> Expression<F> {
+    pub fn output_expr<F: CachedConstants>(&self, meta: &mut VirtualCells<'_, F>) -> Expression<F> {
         let input = self.input_expr(meta);
         let round_constant = self.rc_expr(meta);
-        params::sbox::expr(input, round_constant)
+        params::calc::sbox::expr(input, round_constant)
     }
 }
 
