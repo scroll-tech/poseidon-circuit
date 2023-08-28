@@ -682,7 +682,7 @@ where
             let control_as_flag = F::from_u128(control as u128 * HASHABLE_DOMAIN_SPEC);
 
             if is_new_sponge {
-                state[0] = control_as_flag;
+                state[0] = control_as_flag + domain;
                 process_start = offset;
             }
 
