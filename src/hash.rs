@@ -824,8 +824,26 @@ where
             },
         )?;
 
-        let assignment_type = std::env::var("ASSIGNMENT_TYPE").unwrap_or("default".into());
-        let (states_in, states_out) = if assignment_type == "default" {
+        #[cfg(not(feature = "parallel_syn"))]
+        let is_parallel_assignment = false;
+
+        // if feature flag "parallel_syn" is enabled,
+        // `parallel` assignment is turned on by default
+        // we can turn it off by set the environment variable
+        // `CIRCUIT_ASSIGNMENT_TYPE=serial`
+        #[cfg(feature = "parallel_syn")]
+        let is_parallel_assignment = {
+            let assignment_type = std::env::var("CIRCUIT_ASSIGNMENT_TYPE")
+                .ok()
+                .unwrap_or_default();
+            match assignment_type.as_str() {
+                "serial" => false,
+                "parallel" => true,
+                &_ => true,
+            }
+        };
+
+        let (states_in, states_out) = if is_parallel_assignment == false {
             layouter.assign_region(
                 || "hash table",
                 |mut region| {
@@ -859,7 +877,6 @@ where
                 .map(|i| i.as_ref())
                 .chain(std::iter::repeat(None))
                 .take(self.calcs);
-
             let checks_i = data
                 .checks
                 .iter()
@@ -925,9 +942,7 @@ where
             (states_in, states_out)
         };
 
-        let final_state_time = Instant::now();
-
-        let chip_finals = if std::env::var("ASSIGNMENT_TYPE").map_or(true, |v| v == "default") {
+        let chip_finals = if is_parallel_assignment == false {
             let mut chip_finals = Vec::new();
             for state in states_in {
                 let chip = PC::construct(config.permute_config.clone());
@@ -945,7 +960,6 @@ where
                 &chip, layouter, &states_in,
             )?
         };
-        log::info!("final state took {:?}", final_state_time.elapsed());
 
         layouter.assign_region(
             || "final state dummy",
@@ -1210,9 +1224,19 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "parallel_syn")]
     fn poseidon_parallel_synthesis() {
+        // cargo test --release --package poseidon-circuit --lib hash::tests::poseidon_parallel_synthesis --features short,parallel_syncar
         poseidon_parallel_synthesis_impl::<Pow5Chip<Fr, 3, 2>>();
         poseidon_parallel_synthesis_impl::<SeptidonChip>();
+    }
+
+    fn set_assignment_env_var(value: &str) {
+        std::env::set_var("CIRCUIT_ASSIGNMENT_TYPE", value);
+        let assign_var = std::env::var("CIRCUIT_ASSIGNMENT_TYPE")
+            .ok()
+            .unwrap_or_default();
+        log::info!("CIRCUIT_ASSIGNMENT_TYPE: {}", assign_var);
     }
 
     fn poseidon_parallel_synthesis_impl<PC: PermuteChip<Fr, <Fr as Hashable>::SpecType, 3, 2>>()
@@ -1231,6 +1255,7 @@ mod tests {
 
         let k = 8;
 
+        set_assignment_env_var("serial");
         let mut rng = XorShiftRng::from_seed([
             0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
             0xbc, 0xe5,
@@ -1245,10 +1270,9 @@ mod tests {
             ..Default::default()
         });
 
-        std::env::set_var("ASSIGNMENT_TYPE", "default");
         let pk = keygen_pk2(&general_params, &circuit).expect("keygen_pk shouldn't fail");
 
-        std::env::set_var("ASSIGNMENT_TYPE", "parallel");
+        set_assignment_env_var("parallel");
         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
         create_proof::<
             KZGCommitmentScheme<Bn256>,
@@ -1268,8 +1292,8 @@ mod tests {
         .expect("proof generation should not fail");
         let proof = transcript.finalize();
 
+        set_assignment_env_var("serial");
         let mut verifier_transcript = Blake2bRead::<_, G1Affine, Challenge255<_>>::init(&proof[..]);
-        std::env::set_var("ASSIGNMENT_TYPE", "default");
         let strategy = SingleStrategy::new(&general_params);
         verify_proof::<
             KZGCommitmentScheme<Bn256>,
