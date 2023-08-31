@@ -1226,7 +1226,7 @@ mod tests {
     #[test]
     #[cfg(feature = "parallel_syn")]
     fn poseidon_parallel_synthesis() {
-        // cargo test --release --package poseidon-circuit --lib hash::tests::poseidon_parallel_synthesis --features short,parallel_syncar
+        // cargo test --release --package poseidon-circuit --lib hash::tests::poseidon_parallel_synthesis --features short,parallel_syn
         poseidon_parallel_synthesis_impl::<Pow5Chip<Fr, 3, 2>>();
         poseidon_parallel_synthesis_impl::<SeptidonChip>();
     }
