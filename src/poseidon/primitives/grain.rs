@@ -3,7 +3,7 @@
 use std::marker::PhantomData;
 
 use bitvec::prelude::*;
-use halo2_proofs::arithmetic::FieldExt;
+use ff::FromUniformBytes;
 
 const STATE: usize = 80;
 
@@ -43,13 +43,13 @@ impl SboxType {
     }
 }
 
-pub(super) struct Grain<F: FieldExt> {
+pub(super) struct Grain<F: FromUniformBytes<64> + Ord> {
     state: BitArr!(for 80, in u8, Msb0),
     next_bit: usize,
     _field: PhantomData<F>,
 }
 
-impl<F: FieldExt> Grain<F> {
+impl<F: FromUniformBytes<64> + Ord> Grain<F> {
     pub(super) fn new(sbox: SboxType, t: u16, r_f: u16, r_p: u16) -> Self {
         // Initialize the LFSR state.
         let mut state = bitarr![u8, Msb0; 1; STATE];
@@ -151,7 +151,7 @@ impl<F: FieldExt> Grain<F> {
         //
         // Given that we don't want to diverge from the reference implementation, we hack
         // around this restriction by serializing the bits into a 64-byte array and then
-        // calling F::from_bytes_wide. PLEASE DO NOT COPY THIS INTO YOUR OWN CODE!
+        // calling F::from_uniform_bytes. PLEASE DO NOT COPY THIS INTO YOUR OWN CODE!
         let view = bytes.as_mut();
         for (i, bit) in self.take(F::NUM_BITS as usize).enumerate() {
             // If we diverged from the reference impl and interpreted the bits in LSB
@@ -161,11 +161,11 @@ impl<F: FieldExt> Grain<F> {
             view[i / 8] |= if bit { 1 << (i % 8) } else { 0 };
         }
 
-        F::from_bytes_wide(&bytes)
+        F::from_uniform_bytes(&bytes)
     }
 }
 
-impl<F: FieldExt> Iterator for Grain<F> {
+impl<F: FromUniformBytes<64> + Ord> Iterator for Grain<F> {
     type Item = bool;
 
     fn next(&mut self) -> Option<Self::Item> {

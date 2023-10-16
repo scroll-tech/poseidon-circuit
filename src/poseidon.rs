@@ -4,8 +4,8 @@ use std::convert::TryInto;
 use std::fmt;
 use std::marker::PhantomData;
 
+use ff::{Field, FromUniformBytes};
 use halo2_proofs::{
-    arithmetic::{Field, FieldExt},
     circuit::{AssignedCell, Chip, Layouter},
     plonk::{ConstraintSystem, Error},
 };
@@ -30,8 +30,12 @@ pub enum PaddedWord<F: Field> {
 }
 
 /// This trait is the interface to chips that implement a permutation.
-pub trait PermuteChip<F: FieldExt, S: Spec<F, T, RATE>, const T: usize, const RATE: usize>:
-    Chip<F> + Clone + DebugT + PoseidonInstructions<F, S, T, RATE>
+pub trait PermuteChip<
+    F: FromUniformBytes<64> + Ord,
+    S: Spec<F, T, RATE>,
+    const T: usize,
+    const RATE: usize,
+>: Chip<F> + Clone + DebugT + PoseidonInstructions<F, S, T, RATE>
 {
     /// Configure the permutation chip.
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config;
@@ -41,8 +45,12 @@ pub trait PermuteChip<F: FieldExt, S: Spec<F, T, RATE>, const T: usize, const RA
 }
 
 /// The set of circuit instructions required to use the Poseidon permutation.
-pub trait PoseidonInstructions<F: FieldExt, S: Spec<F, T, RATE>, const T: usize, const RATE: usize>:
-    Chip<F>
+pub trait PoseidonInstructions<
+    F: FromUniformBytes<64> + Ord,
+    S: Spec<F, T, RATE>,
+    const T: usize,
+    const RATE: usize,
+>: Chip<F>
 {
     /// Variable representing the word over which the Poseidon permutation operates.
     type Word: Clone
@@ -76,7 +84,7 @@ pub trait PoseidonInstructions<F: FieldExt, S: Spec<F, T, RATE>, const T: usize,
 ///
 /// [`Hash`]: self::Hash
 pub trait PoseidonSpongeInstructions<
-    F: FieldExt,
+    F: FromUniformBytes<64> + Ord,
     S: Spec<F, T, RATE>,
     D: Domain<F, RATE>,
     const T: usize,
@@ -102,7 +110,7 @@ pub trait PoseidonSpongeInstructions<
 /// A word over which the Poseidon permutation operates.
 #[derive(Debug)]
 pub struct Word<
-    F: FieldExt,
+    F: FromUniformBytes<64> + Ord,
     PoseidonChip: PoseidonInstructions<F, S, T, RATE>,
     S: Spec<F, T, RATE>,
     const T: usize,
@@ -112,7 +120,7 @@ pub struct Word<
 }
 
 impl<
-        F: FieldExt,
+        F: FromUniformBytes<64> + Ord,
         PoseidonChip: PoseidonInstructions<F, S, T, RATE>,
         S: Spec<F, T, RATE>,
         const T: usize,
@@ -131,7 +139,7 @@ impl<
 }
 
 fn poseidon_sponge<
-    F: FieldExt,
+    F: FromUniformBytes<64> + Ord,
     PoseidonChip: PoseidonSpongeInstructions<F, S, D, T, RATE>,
     S: Spec<F, T, RATE>,
     D: Domain<F, RATE>,
@@ -153,7 +161,7 @@ fn poseidon_sponge<
 /// A Poseidon sponge.
 #[derive(Debug)]
 pub struct Sponge<
-    F: FieldExt,
+    F: FromUniformBytes<64> + Ord,
     PoseidonChip: PoseidonSpongeInstructions<F, S, D, T, RATE>,
     S: Spec<F, T, RATE>,
     M: SpongeMode,
@@ -168,7 +176,7 @@ pub struct Sponge<
 }
 
 impl<
-        F: FieldExt,
+        F: FromUniformBytes<64> + Ord,
         PoseidonChip: PoseidonSpongeInstructions<F, S, D, T, RATE>,
         S: Spec<F, T, RATE>,
         D: Domain<F, RATE>,
@@ -241,7 +249,7 @@ impl<
 }
 
 impl<
-        F: FieldExt,
+        F: FromUniformBytes<64> + Ord,
         PoseidonChip: PoseidonSpongeInstructions<F, S, D, T, RATE>,
         S: Spec<F, T, RATE>,
         D: Domain<F, RATE>,
@@ -272,7 +280,7 @@ impl<
 /// A Poseidon hash function, built around a sponge.
 #[derive(Debug)]
 pub struct Hash<
-    F: FieldExt,
+    F: FromUniformBytes<64> + Ord,
     PoseidonChip: PoseidonSpongeInstructions<F, S, D, T, RATE>,
     S: Spec<F, T, RATE>,
     D: Domain<F, RATE>,
@@ -283,7 +291,7 @@ pub struct Hash<
 }
 
 impl<
-        F: FieldExt,
+        F: FromUniformBytes<64> + Ord,
         PoseidonChip: PoseidonSpongeInstructions<F, S, D, T, RATE>,
         S: Spec<F, T, RATE>,
         D: Domain<F, RATE>,
@@ -298,7 +306,7 @@ impl<
 }
 
 impl<
-        F: FieldExt,
+        F: FromUniformBytes<64> + Ord,
         PoseidonChip: PoseidonSpongeInstructions<F, S, ConstantLength<L>, T, RATE>,
         S: Spec<F, T, RATE>,
         const T: usize,
