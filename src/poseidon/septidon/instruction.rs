@@ -3,10 +3,8 @@ use super::super::{
     PermuteChip, PoseidonInstructions, StateWord, Var,
 };
 use super::{params::CachedConstants, util::map_array, SeptidonChip};
-use halo2_proofs::{
-    arithmetic::FieldExt,
-    circuit::{Region, Value},
-};
+use ff::PrimeField;
+use halo2_proofs::circuit::{Region, Value};
 use halo2_proofs::{
     circuit::{Chip, Layouter},
     plonk::{ConstraintSystem, Error},
@@ -111,7 +109,7 @@ impl<F: CachedConstants, S: Spec<F, WIDTH, RATE>> PoseidonInstructions<F, S, WID
                             || "First pass dummy assign",
                             col,
                             initial_states.len() * 8 - 1,
-                            || Value::known(F::zero()),
+                            || Value::known(F::ZERO),
                         )?;
                         return Ok(final_states);
                     }
@@ -164,7 +162,7 @@ impl<F: CachedConstants, S: Spec<F, WIDTH, RATE>> PoseidonInstructions<F, S, WID
     }
 }
 
-impl<F: FieldExt> Chip<F> for SeptidonChip {
+impl<F: PrimeField> Chip<F> for SeptidonChip {
     type Config = Self;
 
     type Loaded = ();
