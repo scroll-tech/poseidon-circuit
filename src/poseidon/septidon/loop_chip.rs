@@ -1,7 +1,7 @@
 use super::state::Cell;
 use super::util::select;
-use halo2_proofs::arithmetic::FieldExt;
-//use halo2_proofs::halo2curves::bn256::Fr as F;
+
+use ff::PrimeField;
 use halo2_proofs::plonk::{ConstraintSystem, Constraints, Expression};
 
 #[derive(Clone, Debug)]
@@ -14,7 +14,7 @@ pub struct LoopBody<F> {
 }
 
 impl LoopChip {
-    pub fn configure<F: FieldExt>(
+    pub fn configure<F: PrimeField>(
         cs: &mut ConstraintSystem<F>,
         q: Expression<F>,
         body: LoopBody<F>,

@@ -16,14 +16,18 @@ pub trait CachedConstants: P128Pow5T3Constants {
 
 pub mod sbox {
     use super::super::util::pow_5;
-    use halo2_proofs::arithmetic::FieldExt;
+
+    use ff::PrimeField;
     use halo2_proofs::plonk::Expression;
 
-    pub fn expr<F: FieldExt>(input: Expression<F>, round_constant: Expression<F>) -> Expression<F> {
+    pub fn expr<F: PrimeField>(
+        input: Expression<F>,
+        round_constant: Expression<F>,
+    ) -> Expression<F> {
         pow_5::expr(input + round_constant)
     }
 
-    pub fn value<F: FieldExt>(input: F, round_constant: F) -> F {
+    pub fn value<F: PrimeField>(input: F, round_constant: F) -> F {
         pow_5::value(input + round_constant)
     }
 }

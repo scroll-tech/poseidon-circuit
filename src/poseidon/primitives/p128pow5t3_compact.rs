@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use halo2_proofs::arithmetic::FieldExt;
+use ff::{FromUniformBytes, PrimeField};
 
 use super::p128pow5t3::P128Pow5T3Constants;
 use super::{Mds, Spec};
@@ -13,7 +13,9 @@ pub struct P128Pow5T3Compact<Fp> {
     _marker: PhantomData<Fp>,
 }
 
-impl<Fp: P128Pow5T3Constants> Spec<Fp, 3, 2> for P128Pow5T3Compact<Fp> {
+impl<Fp: P128Pow5T3Constants + FromUniformBytes<64> + Ord> Spec<Fp, 3, 2>
+    for P128Pow5T3Compact<Fp>
+{
     fn full_rounds() -> usize {
         8
     }
@@ -55,8 +57,8 @@ impl<Fp: P128Pow5T3Constants> Spec<Fp, 3, 2> for P128Pow5T3Compact<Fp> {
     }
 }
 
-fn mat_mul<Fp: FieldExt, const T: usize>(mat: &Mds<Fp, T>, input: &[Fp; T]) -> [Fp; T] {
-    let mut out = [Fp::zero(); T];
+fn mat_mul<Fp: PrimeField, const T: usize>(mat: &Mds<Fp, T>, input: &[Fp; T]) -> [Fp; T] {
+    let mut out = [Fp::ZERO; T];
     #[allow(clippy::needless_range_loop)]
     for i in 0..T {
         for j in 0..T {
@@ -66,17 +68,17 @@ fn mat_mul<Fp: FieldExt, const T: usize>(mat: &Mds<Fp, T>, input: &[Fp; T]) -> [
     out
 }
 
-fn vec_accumulate<Fp: FieldExt, const T: usize>(a: &mut [Fp; T], b: &[Fp; T]) {
+fn vec_accumulate<Fp: PrimeField, const T: usize>(a: &mut [Fp; T], b: &[Fp; T]) {
     for i in 0..T {
         a[i] += b[i];
     }
 }
 
-fn vec_remove_tail<Fp: FieldExt, const T: usize>(a: &mut [Fp; T]) -> [Fp; T] {
-    let mut tail = [Fp::zero(); T];
+fn vec_remove_tail<Fp: PrimeField, const T: usize>(a: &mut [Fp; T]) -> [Fp; T] {
+    let mut tail = [Fp::ZERO; T];
     for i in 1..T {
         tail[i] = a[i];
-        a[i] = Fp::zero();
+        a[i] = Fp::ZERO;
     }
     tail
 }

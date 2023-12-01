@@ -1,9 +1,10 @@
 //! The hash circuit base on poseidon.
 
 use crate::poseidon::primitives::{ConstantLengthIden3, Domain, Hash, Spec, VariableLengthIden3};
+use ff::{FromUniformBytes, PrimeField};
+use halo2_proofs::circuit::AssignedCell;
 use halo2_proofs::halo2curves::bn256::Fr;
 use halo2_proofs::plonk::Fixed;
-use halo2_proofs::{arithmetic::FieldExt, circuit::AssignedCell};
 use log;
 use std::time::Instant;
 
@@ -45,7 +46,7 @@ pub use chip_long::*;
 pub use chip_short::*;
 
 /// indicate an field can be hashed in merkle tree (2 Fields to 1 Field)
-pub trait Hashable: Hashablebase {
+pub trait Hashable: Hashablebase + FromUniformBytes<64> + Ord {
     /// the spec type used in circuit for this hashable field
     type SpecType: Spec<Self, 3, 2>;
     /// the domain type used for hash calculation
@@ -54,7 +55,7 @@ pub trait Hashable: Hashablebase {
     /// execute hash for any sequence of fields
     #[deprecated]
     fn hash(inp: [Self; 2]) -> Self {
-        Self::hash_with_domain(inp, Self::zero())
+        Self::hash_with_domain(inp, Self::ZERO)
     }
 
     /// execute hash for any sequence of fields, with domain being specified
@@ -126,7 +127,7 @@ use std::fmt::Debug as DebugT;
 
 /// The config for poseidon hash circuit
 #[derive(Clone, Debug)]
-pub struct SpongeConfig<F: FieldExt, PC: Chip<F> + Clone + DebugT> {
+pub struct SpongeConfig<F: PrimeField, PC: Chip<F> + Clone + DebugT> {
     permute_config: PC::Config,
     hash_table: [Column<Advice>; 6],
     hash_table_aux: [Column<Advice>; 6],
@@ -201,13 +202,11 @@ impl<F: Hashable, PC: PermuteChip<F, F::SpecType, 3, 2>> SpongeConfig<F, PC> {
             vec![
                 q_enable.clone()
                     * s_continue.clone()
-                    * (Expression::Constant(F::one()) - s_continue.clone()),
-                q_enable.clone() * ctrl * (Expression::Constant(F::one()) - ctrl_bool.clone()),
-                q_enable.clone()
-                    * s_continue.clone()
-                    * (Expression::Constant(F::one()) - ctrl_bool),
+                    * (Expression::Constant(F::ONE) - s_continue.clone()),
+                q_enable.clone() * ctrl * (Expression::Constant(F::ONE) - ctrl_bool.clone()),
+                q_enable.clone() * s_continue.clone() * (Expression::Constant(F::ONE) - ctrl_bool),
                 q_enable
-                    * (Expression::Constant(F::one())
+                    * (Expression::Constant(F::ONE)
                         - s_continue
                         - meta.query_advice(header_mark, Rotation::cur())),
             ]
@@ -230,7 +229,7 @@ impl<F: Hashable, PC: PermuteChip<F, F::SpecType, 3, 2>> SpongeConfig<F, PC> {
                     * (ctrl
                         + Expression::Constant(F::from_u128(step as u128 * HASHABLE_DOMAIN_SPEC))
                         - ctrl_prev),
-                q_enable * (Expression::Constant(F::one()) - ctrl_bool),
+                q_enable * (Expression::Constant(F::ONE) - ctrl_bool),
             ]
         });
 
@@ -251,7 +250,7 @@ impl<F: Hashable, PC: PermuteChip<F, F::SpecType, 3, 2>> SpongeConfig<F, PC> {
             vec![
                 q_enable.clone() * s_continue_hash.clone() * (hash_ind - hash_prev.clone()),
                 q_enable
-                    * (Expression::Constant(F::one()) - s_continue_hash)
+                    * (Expression::Constant(F::ONE) - s_continue_hash)
                     * (hash_out - hash_prev),
             ]
         });
@@ -284,7 +283,7 @@ impl<F: Hashable, PC: PermuteChip<F, F::SpecType, 3, 2>> SpongeConfig<F, PC> {
             // hash output: must inherit prev state or apply current control flag (for new hash)
             ret.push(
                 q_enable.clone()
-                    * (Expression::Constant(F::one()) - s_continue_hash.clone())
+                    * (Expression::Constant(F::ONE) - s_continue_hash.clone())
                     * (inp_hash.clone() - inp_hash_init),
             );
             ret.push(q_enable * s_continue_hash * (inp_hash - inp_hash_prev - doman_spec));
@@ -320,7 +319,7 @@ pub struct PoseidonHashTable<F> {
     pub checks: Vec<Option<F>>,
 }
 
-impl<F: FieldExt> PoseidonHashTable<F> {
+impl<F: PrimeField> PoseidonHashTable<F> {
     /// Add common inputs
     #[deprecated]
     pub fn constant_inputs<'d>(&mut self, src: impl IntoIterator<Item = &'d [F; 2]>) {
@@ -412,7 +411,7 @@ impl<F: Hashable> PoseidonHashTable<F> {
 
 /// Represent the chip for Poseidon hash table
 #[derive(Debug)]
-pub struct SpongeChip<'d, F: FieldExt, const STEP: usize, PC: Chip<F> + Clone + DebugT>
+pub struct SpongeChip<'d, F: PrimeField, const STEP: usize, PC: Chip<F> + Clone + DebugT>
 where
     PC::Config: Sync,
 {
@@ -457,7 +456,7 @@ where
             ),
         ] {
             for col in cols {
-                region.assign_advice(|| tip, *col, 0, || Value::known(F::zero()))?;
+                region.assign_advice(|| tip, *col, 0, || Value::known(F::ZERO))?;
             }
         }
 
@@ -506,7 +505,7 @@ where
 
         let mut is_new_sponge = true;
         let mut process_start = 0;
-        let mut state: [F; 3] = [F::zero(); 3];
+        let mut state: [F; 3] = [F::ZERO; 3];
         let mut last_offset = 0;
 
         for (i, ((inp, control), (domain, check))) in inputs_i
@@ -515,7 +514,7 @@ where
             .enumerate()
         {
             let control = control.copied().unwrap_or(0);
-            let domain = domain.copied().unwrap_or_else(F::zero);
+            let domain = domain.copied().unwrap_or(F::ZERO);
             let offset = i + begin_offset;
             last_offset = offset;
 
@@ -528,7 +527,7 @@ where
 
             let inp = inp
                 .map(|[a, b]| [*a, *b])
-                .unwrap_or_else(|| [F::zero(), F::zero()]);
+                .unwrap_or_else(|| [F::ZERO, F::ZERO]);
 
             state.iter_mut().skip(1).zip(inp).for_each(|(s, inp)| {
                 if is_new_sponge {
@@ -556,7 +555,7 @@ where
                 || "assign q_enable",
                 self.config.q_enable,
                 offset,
-                || Value::known(F::one()),
+                || Value::known(F::ONE),
             )?;
 
             let c_start = [0; 3]
@@ -593,17 +592,17 @@ where
                 (
                     "state beginning flag",
                     config.hash_table[5],
-                    if is_new_sponge { F::one() } else { F::zero() },
+                    if is_new_sponge { F::ONE } else { F::ZERO },
                 ),
                 (
                     "state input control_aux",
                     config.control_aux,
-                    control_as_flag.invert().unwrap_or_else(F::zero),
+                    control_as_flag.invert().unwrap_or(F::ZERO),
                 ),
                 (
                     "state continue control",
                     config.s_sponge_continue,
-                    if is_new_sponge { F::zero() } else { F::one() },
+                    if is_new_sponge { F::ZERO } else { F::ONE },
                 ),
             ] {
                 region.assign_advice(
@@ -662,7 +661,7 @@ where
                 // any advice that we access in this region can be used
                 config.hash_table_aux[0],
                 data.len() - 1,
-                || Value::known(F::zero()),
+                || Value::known(F::ZERO),
             )?;
             *is_first_pass = false;
             return Ok((states_in, states_out));
@@ -672,11 +671,11 @@ where
 
         let mut is_new_sponge = true;
         let mut process_start = 0;
-        let mut state = [F::zero(); 3];
+        let mut state = [F::ZERO; 3];
 
         for (i, ((inp, control), (domain, check))) in data.iter().enumerate() {
             let control = control.copied().unwrap_or(0u64);
-            let domain = domain.copied().unwrap_or_else(F::zero);
+            let domain = domain.copied().unwrap_or(F::ZERO);
             let offset = i;
 
             let control_as_flag = F::from_u128(control as u128 * HASHABLE_DOMAIN_SPEC);
@@ -688,7 +687,7 @@ where
 
             let inp = inp
                 .map(|[a, b]| [*a, *b])
-                .unwrap_or_else(|| [F::zero(), F::zero()]);
+                .unwrap_or_else(|| [F::ZERO, F::ZERO]);
 
             state.iter_mut().skip(1).zip(inp).for_each(|(s, inp)| {
                 if is_new_sponge {
@@ -716,7 +715,7 @@ where
                 || "assign q_enable",
                 self.config.q_enable,
                 offset,
-                || Value::known(F::one()),
+                || Value::known(F::ONE),
             )?;
 
             let c_start = [0; 3]
@@ -753,17 +752,17 @@ where
                 (
                     "state beginning flag",
                     config.hash_table[5],
-                    if is_new_sponge { F::one() } else { F::zero() },
+                    if is_new_sponge { F::ONE } else { F::ZERO },
                 ),
                 (
                     "state input control_aux",
                     config.control_aux,
-                    control_as_flag.invert().unwrap_or_else(F::zero),
+                    control_as_flag.invert().unwrap_or(F::ZERO),
                 ),
                 (
                     "state continue control",
                     config.s_sponge_continue,
-                    if is_new_sponge { F::zero() } else { F::one() },
+                    if is_new_sponge { F::ZERO } else { F::ONE },
                 ),
             ] {
                 region.assign_advice(
@@ -978,7 +977,7 @@ where
     }
 }
 
-impl<F: FieldExt, const STEP: usize, PC: Chip<F> + Clone + DebugT> Chip<F>
+impl<F: PrimeField, const STEP: usize, PC: Chip<F> + Clone + DebugT> Chip<F>
     for SpongeChip<'_, F, STEP, PC>
 where
     PC::Config: Sync,
