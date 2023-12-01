@@ -1133,10 +1133,12 @@ mod tests {
         ];
 
         let k = 8;
-        let circuit = PoseidonHashTable {
+        let table = PoseidonHashTable {
             inputs: vec![message1, message2],
             ..Default::default()
         };
+
+        let circuit = TestCircuit::<Pow5Chip<Fr, 3, 2>>::new(table);
         halo2_proofs::dev::CircuitLayout::default()
             .show_equality_constraints(true)
             .render(k, &circuit, &root)
