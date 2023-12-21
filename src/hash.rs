@@ -8,6 +8,8 @@ use halo2_proofs::plonk::Fixed;
 use log;
 use std::time::Instant;
 
+mod stable_group_by;
+
 mod chip_long {
     use super::{SpongeChip, SpongeConfig};
     use crate::poseidon::primitives::{P128Pow5T3, P128Pow5T3Constants};
@@ -898,17 +900,16 @@ where
             // with a new sponge.
             //
             // Each chunk would be processed in a separate thread.
-            let assignments = data
-                .group_by(|((_, control), _), _| {
-                    chunk_len += 1;
-                    if control.copied().unwrap_or(0) > STEP as u64 || chunk_len < min_len {
-                        true
-                    } else {
-                        chunk_len = 0;
-                        false
-                    }
-                })
-                .collect::<Vec<_>>();
+            let assignments = stable_group_by::group_by(&data, |((_, control), _), _| {
+                chunk_len += 1;
+                if control.copied().unwrap_or(0) > STEP as u64 || chunk_len < min_len {
+                    true
+                } else {
+                    chunk_len = 0;
+                    false
+                }
+            })
+            .collect::<Vec<_>>();
             let assignments_len = assignments.len();
             let assignments = assignments
                 .into_iter()
