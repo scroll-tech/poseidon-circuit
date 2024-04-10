@@ -25,7 +25,10 @@ impl<Fp: P128Pow5T3Constants + FromUniformBytes<64> + Ord> Spec<Fp, 3, 2>
     }
 
     fn sbox(val: Fp) -> Fp {
-        val.pow_vartime([5])
+        // much faster than val.pow_vartime([5])
+        let a = val * val;
+        let b = a * a;
+        b * val
     }
 
     fn secure_mds() -> usize {
