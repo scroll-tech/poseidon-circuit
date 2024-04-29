@@ -1,7 +1,6 @@
 //! mpt demo circuits
 //
 
-#![feature(slice_group_by)]
 #![allow(dead_code)]
 #![allow(unused_macros)]
 #![deny(missing_docs)]
