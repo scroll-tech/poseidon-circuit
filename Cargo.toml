@@ -1,45 +1,28 @@
-[package]
-name = "poseidon-circuit"
-version = "0.1.0"
-edition = "2021"
+[workspace]
+members = [
+    "poseidon-circuit",
+    "poseidon-base"
+]
+resolver = "2"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-ff = "0.13.0"
-halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2022_09_10" }
-lazy_static = "1.4.0"
-thiserror = "1.0"
+[workspace.dependencies]
+bencher = "0.1"
 bitvec = "1"
-log = "0.4.0"
-rand_xorshift = "0.3.0"
-rand = "0.8"
-
-[patch."https://github.com/privacy-scaling-explorations/halo2.git"]
-halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "v1.0" }
-
-[features]
-default = ["halo2_proofs/parallel_syn", "short"]
-# Use an implementation using fewer rows (8) per permutation.
-short = []
-# printout the layout of circuits for demo and some unittests
-print_layout = ["halo2_proofs/dev-graph"]
-legacy = []
-# "halo2_proofs/parallel_syn" is turned on by default for compilation
-# "parallel_syn" can be turned on/off via `zkevm-circuits`
-parallel_syn = ["halo2_proofs/parallel_syn"]
-
-[dev-dependencies]
+ff = "0.13"
+halo2curves = { version = "0.1.0", features = [ "derive_serde" ] }
+halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2022_09_10" }
+lazy_static = "1.4"
+log = "0.4"
+plotters = "0.3"
 rand = "0.8"
 rand_chacha = "0.3.0"
-plotters = "0.3"
-bencher = "0.1"
+rand_xorshift = "0.3"
 subtle = "2"
-
-[[bench]]
-name = "hash"
-harness = false
+thiserror = "1.0"
 
 [profile.test]
 opt-level = 3
 debug-assertions = true
+
+[patch."https://github.com/privacy-scaling-explorations/halo2.git"]
+halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "v1.0" }

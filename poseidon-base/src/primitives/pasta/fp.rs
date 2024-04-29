@@ -6,11 +6,11 @@
 //! ```text
 //! $ sage generate_parameters_grain.sage 1 0 255 3 8 56 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001
 //! ```
-use super::pallas;
+use halo2curves::pasta::pallas;
 
 // Number of round constants: 192
 // Round constants for GF(p):
-pub(crate) const ROUND_CONSTANTS: [[pallas::Base; 3]; 64] = [
+pub const ROUND_CONSTANTS: [[pallas::Base; 3]; 64] = [
     [
         pallas::Base::from_raw([
             0x5753_8c25_9642_6303,
@@ -1304,7 +1304,7 @@ pub(crate) const ROUND_CONSTANTS: [[pallas::Base; 3]; 64] = [
 //  [True, None]
 // Prime number: 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001
 // MDS matrix:
-pub(crate) const MDS: [[pallas::Base; 3]; 3] = [
+pub const MDS: [[pallas::Base; 3]; 3] = [
     [
         pallas::Base::from_raw([
             0x323f_2486_d7e1_1b63,
@@ -1367,7 +1367,7 @@ pub(crate) const MDS: [[pallas::Base; 3]; 3] = [
     ],
 ];
 
-pub(crate) const MDS_INV: [[pallas::Base; 3]; 3] = [
+pub const MDS_INV: [[pallas::Base; 3]; 3] = [
     [
         pallas::Base::from_raw([
             0xc6de_463c_d140_4e6b,

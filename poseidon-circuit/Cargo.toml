@@ -1,0 +1,35 @@
+[package]
+name = "poseidon-circuit"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ff.workspace = true
+halo2_proofs.workspace = true
+thiserror.workspace = true
+log.workspace = true
+poseidon-base = { path = "../poseidon-base" }
+rand_xorshift.workspace = true
+rand.workspace = true
+
+[features]
+default = ["halo2_proofs/parallel_syn", "short"]
+# Use an implementation using fewer rows (8) per permutation.
+short = ["poseidon-base/short"]
+# printout the layout of circuits for demo and some unittests
+print_layout = ["halo2_proofs/dev-graph"]
+legacy = []
+# "halo2_proofs/parallel_syn" is turned on by default for compilation
+# "parallel_syn" can be turned on/off via `zkevm-circuits`
+parallel_syn = ["halo2_proofs/parallel_syn"]
+
+[dev-dependencies]
+rand.workspace = true
+rand_chacha.workspace = true
+plotters.workspace = true
+bencher.workspace = true
+subtle.workspace = true
+
+[[bench]]
+name = "hash"
+harness = false

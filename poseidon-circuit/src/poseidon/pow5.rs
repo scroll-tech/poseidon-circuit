@@ -7,9 +7,10 @@ use halo2_proofs::{
     plonk::{Advice, Any, Column, ConstraintSystem, Error, Expression, Fixed, Selector},
     poly::Rotation,
 };
+use poseidon_base::primitives::{Absorbing, Domain, Mds, Spec, Squeezing, State};
 
 use super::{
-    primitives::{Absorbing, Domain, Mds, Spec, Squeezing, State},
+
     PaddedWord, PermuteChip, PoseidonInstructions, PoseidonSpongeInstructions,
 };
 
@@ -712,20 +713,21 @@ impl<F: PrimeField, const WIDTH: usize> Pow5State<F, WIDTH> {
 
 #[cfg(test)]
 mod tests {
-    use crate::poseidon::primitives::pasta::{test_vectors, Fp};
     use halo2_proofs::halo2curves::group::ff::{Field, PrimeField};
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner, Value},
         dev::MockProver,
         plonk::{Circuit, ConstraintSystem, Error},
     };
+    use poseidon_base::primitives::{
+        self as poseidon,
+        pasta::{test_vectors, Fp},
+        ConstantLength, P128Pow5T3, Spec,
+    };
     use rand::rngs::OsRng;
 
     use super::{PoseidonInstructions, Pow5Chip, Pow5Config, StateWord};
-    use crate::poseidon::{
-        primitives::{self as poseidon, ConstantLength, P128Pow5T3, Spec},
-        Hash,
-    };
+    use crate::poseidon::Hash;
     use std::convert::TryInto;
     use std::marker::PhantomData;
 

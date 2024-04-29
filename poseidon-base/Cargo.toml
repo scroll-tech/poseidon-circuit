@@ -1,0 +1,12 @@
+[package]
+name = "poseidon-base"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+lazy_static.workspace = true
+bitvec.workspace = true
+halo2curves.workspace = true
+
+[features]
+short = []
