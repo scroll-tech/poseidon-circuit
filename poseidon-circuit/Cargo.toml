@@ -24,10 +24,11 @@ legacy = []
 parallel_syn = ["halo2_proofs/parallel_syn"]
 
 [dev-dependencies]
+bencher.workspace = true
+lazy_static.workspace = true
+plotters.workspace = true
 rand.workspace = true
 rand_chacha.workspace = true
-plotters.workspace = true
-bencher.workspace = true
 subtle.workspace = true
 
 [[bench]]
