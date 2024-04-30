@@ -10,14 +10,17 @@ use halo2_proofs::{
     plonk::{ConstraintSystem, Error},
 };
 
+use poseidon_base::primitives::{
+    Absorbing, ConstantLength, Domain, Spec, SpongeMode, Squeezing, State,
+};
+
 mod pow5;
 pub use pow5::{Pow5Chip, Pow5Config, StateWord, Var};
 
 mod septidon;
-pub use septidon::{CachedConstants, SeptidonChip};
+pub use septidon::SeptidonChip;
+pub use poseidon_base::params::CachedConstants;
 
-pub mod primitives;
-use primitives::{Absorbing, ConstantLength, Domain, Spec, SpongeMode, Squeezing, State};
 use std::fmt::Debug as DebugT;
 
 /// A word from the padded input to a Poseidon sponge.

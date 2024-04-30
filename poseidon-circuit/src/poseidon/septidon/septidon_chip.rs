@@ -1,11 +1,11 @@
 use halo2_proofs::circuit::{Region, Value};
 //use halo2_proofs::halo2curves::bn256::Fr as F;
 use halo2_proofs::plonk::{ConstraintSystem, Error};
+use poseidon_base::params::{round_constant, CachedConstants};
 
 use super::control::ControlChip;
 use super::full_round::FullRoundChip;
 use super::loop_chip::LoopChip;
-use super::params::{round_constant, CachedConstants};
 use super::septuple_round::SeptupleRoundChip;
 use super::state::Cell;
 use super::transition_round::TransitionRoundChip;

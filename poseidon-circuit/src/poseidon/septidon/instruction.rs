@@ -1,13 +1,14 @@
-use super::super::{
-    primitives::{Spec, State},
-    PermuteChip, PoseidonInstructions, StateWord, Var,
-};
-use super::{params::CachedConstants, util::map_array, SeptidonChip};
+use super::super::{PermuteChip, PoseidonInstructions, StateWord, Var};
+use super::{util::map_array, SeptidonChip};
 use ff::PrimeField;
 use halo2_proofs::circuit::{Region, Value};
 use halo2_proofs::{
     circuit::{Chip, Layouter},
     plonk::{ConstraintSystem, Error},
+};
+use poseidon_base::{
+    params::CachedConstants,
+    primitives::{Spec, State},
 };
 
 const WIDTH: usize = 3;

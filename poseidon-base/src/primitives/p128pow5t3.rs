@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use ff::FromUniformBytes;
+use halo2curves::ff::FromUniformBytes;
 
 use super::{Mds, Spec};
 
@@ -51,10 +51,10 @@ impl<Fp: P128Pow5T3Constants> Spec<Fp, 3, 2> for P128Pow5T3<Fp> {
 mod tests {
     use std::marker::PhantomData;
 
-    use ff::{FromUniformBytes, PrimeField};
+    use halo2curves::ff::{FromUniformBytes, PrimeField};
 
     use super::super::pasta::{fp, test_vectors, Fp};
-    use crate::poseidon::primitives::{permute, ConstantLength, Hash, Spec};
+    use crate::primitives::{permute, ConstantLength, Hash, Spec};
 
     /// The same Poseidon specification as poseidon::P128Pow5T3, but constructed
     /// such that its constants will be generated at runtime.

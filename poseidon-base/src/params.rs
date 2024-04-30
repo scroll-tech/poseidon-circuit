@@ -1,8 +1,6 @@
-use super::super::primitives::{Mds as MdsT, P128Pow5T3Constants};
+use crate::primitives::{Mds as MdsT, P128Pow5T3Constants};
 
-/// This implementation can be limited to gate degree 5. However, this mode will not work with
-/// blinding or inactive rows. Enable only with a prover that supports assignments to all n rows.
-pub const GATE_DEGREE_5: bool = false;
+pub type Mds<F> = MdsT<F, 3>;
 
 /// This is the base "hashable" type requirement for septidon
 pub trait CachedConstants: P128Pow5T3Constants {
@@ -14,30 +12,10 @@ pub trait CachedConstants: P128Pow5T3Constants {
     fn cached_mds_inv() -> &'static Mds<Self>;
 }
 
-pub mod sbox {
-    use super::super::util::pow_5;
-
-    use ff::PrimeField;
-    use halo2_proofs::plonk::Expression;
-
-    pub fn expr<F: PrimeField>(
-        input: Expression<F>,
-        round_constant: Expression<F>,
-    ) -> Expression<F> {
-        pow_5::expr(input + round_constant)
-    }
-
-    pub fn value<F: PrimeField>(input: F, round_constant: F) -> F {
-        pow_5::value(input + round_constant)
-    }
-}
-
-pub type Mds<F> = MdsT<F, 3>;
-
 mod bn254 {
     use super::{CachedConstants, Mds};
-    use crate::poseidon::primitives::{P128Pow5T3Compact, Spec};
-    use halo2_proofs::halo2curves::bn256::Fr as F;
+    use crate::primitives::{P128Pow5T3Compact, Spec};
+    use ::halo2curves::bn256::Fr as F;
     use lazy_static::lazy_static;
     lazy_static! {
         // Cache the round constants and the MDS matrix (and unused inverse MDS matrix).

@@ -1,8 +1,8 @@
-use ff::FromUniformBytes;
+use halo2curves::ff::FromUniformBytes;
 
 use super::{grain::Grain, Mds};
 
-pub(super) fn generate_mds<F: FromUniformBytes<64> + Ord, const T: usize>(
+pub(crate) fn generate_mds<F: FromUniformBytes<64> + Ord, const T: usize>(
     grain: &mut Grain<F>,
     mut select: usize,
 ) -> (Mds<F, T>, Mds<F, T>) {

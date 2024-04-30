@@ -1,12 +1,13 @@
-use halo2_proofs::halo2curves::{group::ff::PrimeField, pasta};
-pub(crate) use pasta::pallas;
-pub(crate) use pasta::Fp;
-pub(crate) mod fp;
-pub(crate) mod test_vectors;
+use halo2curves::{group::ff::PrimeField, pasta};
+pub use pasta::pallas;
+pub use pasta::Fp;
+pub mod fp;
+pub mod test_vectors;
 
-use super::Mds;
+use crate::poseidon::primitives::p128pow5t3::P128Pow5T3Constants;
+use crate::poseidon::primitives::Mds;
 
-impl super::p128pow5t3::P128Pow5T3Constants for Fp {
+impl P128Pow5T3Constants for Fp {
     fn round_constants() -> Vec<[Self; 3]> {
         fp::ROUND_CONSTANTS.to_vec()
     }

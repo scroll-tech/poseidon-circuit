@@ -5,18 +5,18 @@ use std::fmt;
 use std::iter;
 use std::marker::PhantomData;
 
-use ff::FromUniformBytes;
+use halo2curves::ff::FromUniformBytes;
 
 pub(crate) mod grain;
 pub(crate) mod mds;
 
-mod fields;
-#[macro_use]
-mod binops;
+// mod fields;
+// #[macro_use]
+// mod binops;
 
-pub(crate) mod bn256;
+pub mod bn256;
 #[cfg(test)]
-pub(crate) mod pasta;
+pub mod pasta;
 
 //#[cfg(test)]
 //pub(crate) mod test_vectors;
@@ -25,19 +25,19 @@ mod p128pow5t3;
 mod p128pow5t3_compact;
 
 pub use p128pow5t3::P128Pow5T3;
-pub(crate) use p128pow5t3::P128Pow5T3Constants;
+pub use p128pow5t3::P128Pow5T3Constants;
 pub use p128pow5t3_compact::P128Pow5T3Compact;
 
 use grain::SboxType;
 
 /// The type used to hold permutation state.
-pub(crate) type State<F, const T: usize> = [F; T];
+pub type State<F, const T: usize> = [F; T];
 
 /// The type used to hold sponge rate.
-pub(crate) type SpongeRate<F, const RATE: usize> = [Option<F>; RATE];
+pub type SpongeRate<F, const RATE: usize> = [Option<F>; RATE];
 
 /// The type used to hold the MDS matrix and its inverse.
-pub(crate) type Mds<F, const T: usize> = [[F; T]; T];
+pub type Mds<F, const T: usize> = [[F; T]; T];
 
 /// A specification for a Poseidon permutation.
 pub trait Spec<F: FromUniformBytes<64> + Ord, const T: usize, const RATE: usize>:
@@ -180,17 +180,17 @@ pub trait SpongeMode: private::SealedSpongeMode {}
 
 /// The absorbing state of the `Sponge`.
 #[derive(Debug)]
-pub struct Absorbing<F, const RATE: usize>(pub(crate) SpongeRate<F, RATE>);
+pub struct Absorbing<F, const RATE: usize>(pub SpongeRate<F, RATE>);
 
 /// The squeezing state of the `Sponge`.
 #[derive(Debug)]
-pub struct Squeezing<F, const RATE: usize>(pub(crate) SpongeRate<F, RATE>);
+pub struct Squeezing<F, const RATE: usize>(pub SpongeRate<F, RATE>);
 
 impl<F, const RATE: usize> SpongeMode for Absorbing<F, RATE> {}
 impl<F, const RATE: usize> SpongeMode for Squeezing<F, RATE> {}
 
 impl<F: fmt::Debug, const RATE: usize> Absorbing<F, RATE> {
-    pub(crate) fn init_with(val: F) -> Self {
+    pub fn init_with(val: F) -> Self {
         Self(
             iter::once(Some(val))
                 .chain((1..RATE).map(|_| None))

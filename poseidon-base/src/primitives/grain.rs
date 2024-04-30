@@ -3,12 +3,12 @@
 use std::marker::PhantomData;
 
 use bitvec::prelude::*;
-use ff::FromUniformBytes;
+use halo2curves::ff::FromUniformBytes;
 
 const STATE: usize = 80;
 
 #[derive(Debug, Clone, Copy)]
-pub(super) enum FieldType {
+pub(crate) enum FieldType {
     /// GF(2^n)
     #[allow(dead_code)]
     Binary,
@@ -26,7 +26,7 @@ impl FieldType {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(super) enum SboxType {
+pub(crate) enum SboxType {
     /// x^alpha
     Pow,
     /// x^(-1)
@@ -43,14 +43,14 @@ impl SboxType {
     }
 }
 
-pub(super) struct Grain<F: FromUniformBytes<64> + Ord> {
+pub(crate) struct Grain<F: FromUniformBytes<64> + Ord> {
     state: BitArr!(for 80, in u8, Msb0),
     next_bit: usize,
     _field: PhantomData<F>,
 }
 
 impl<F: FromUniformBytes<64> + Ord> Grain<F> {
-    pub(super) fn new(sbox: SboxType, t: u16, r_f: u16, r_p: u16) -> Self {
+    pub(crate) fn new(sbox: SboxType, t: u16, r_f: u16, r_p: u16) -> Self {
         // Initialize the LFSR state.
         let mut state = bitarr![u8, Msb0; 1; STATE];
         let mut set_bits = |offset: usize, len, value| {
@@ -109,7 +109,7 @@ impl<F: FromUniformBytes<64> + Ord> Grain<F> {
     }
 
     /// Returns the next field element from this Grain instantiation.
-    pub(super) fn next_field_element(&mut self) -> F {
+    pub(crate) fn next_field_element(&mut self) -> F {
         // Loop until we get an element in the field.
         loop {
             let mut bytes = F::Repr::default();
@@ -138,7 +138,7 @@ impl<F: FromUniformBytes<64> + Ord> Grain<F> {
 
     /// Returns the next field element from this Grain instantiation, without using
     /// rejection sampling.
-    pub(super) fn next_field_element_without_rejection(&mut self) -> F {
+    pub(crate) fn next_field_element_without_rejection(&mut self) -> F {
         let mut bytes = [0u8; 64];
 
         // Poseidon reference impl interprets the bits as a repr in MSB order, because

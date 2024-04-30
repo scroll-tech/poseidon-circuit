@@ -1,9 +1,9 @@
-pub(crate) use halo2_proofs::halo2curves::bn256::Fr as Fp;
+pub use halo2curves::bn256::Fr as Fp;
 
-use super::p128pow5t3::P128Pow5T3Constants;
-use super::Mds;
+use crate::primitives::p128pow5t3::P128Pow5T3Constants;
+use crate::primitives::Mds;
 
-pub(crate) mod fp;
+pub mod fp;
 
 impl P128Pow5T3Constants for Fp {
     fn partial_rounds() -> usize {
@@ -25,7 +25,7 @@ impl P128Pow5T3Constants for Fp {
 mod tests {
     use std::marker::PhantomData;
 
-    use crate::poseidon::primitives::{permute, P128Pow5T3, P128Pow5T3Compact, Spec};
+    use crate::primitives::{permute, P128Pow5T3, P128Pow5T3Compact, Spec};
 
     use super::*;
 
