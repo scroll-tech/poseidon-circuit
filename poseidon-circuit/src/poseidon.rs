@@ -19,6 +19,7 @@ pub use pow5::{Pow5Chip, Pow5Config, StateWord, Var};
 
 mod septidon;
 pub use septidon::SeptidonChip;
+pub use poseidon_base::params::CachedConstants;
 
 use std::fmt::Debug as DebugT;
 

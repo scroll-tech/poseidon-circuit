@@ -4,7 +4,6 @@ use ff::PrimeField;
 use halo2_proofs::circuit::AssignedCell;
 use halo2_proofs::plonk::Fixed;
 use log;
-use poseidon_base::{Hashable, HASHABLE_DOMAIN_SPEC};
 use std::time::Instant;
 
 #[cfg(not(feature = "short"))]
@@ -43,6 +42,8 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use std::fmt::Debug as DebugT;
+
+pub use poseidon_base::hash::*;
 
 /// The config for poseidon hash circuit
 #[derive(Clone, Debug)]
