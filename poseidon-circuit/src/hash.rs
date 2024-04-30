@@ -807,28 +807,28 @@ where
                 .map(|e| e.get())
                 .unwrap_or(32);
             let min_len = self.calcs / chunks_count + 1;
-            let mut chunk_len = 0;
 
             let data: Vec<((Option<&[F; 2]>, Option<&u64>), (Option<&F>, Option<&F>))> = inputs_i
                 .zip(controls_i)
                 .zip(domains_i.zip(checks_i))
                 .collect();
 
-            // Split `data` into chunks and ensure each chunks is longer thant `min_len` and ends
+            // Split `data` into chunks and ensure each chunks is not shorter than `min_len` and ends
             // with a new sponge.
             //
             // Each chunk would be processed in a separate thread.
-            let assignments = data
-                .group_by(|((_, control), _), _| {
-                    chunk_len += 1;
-                    if control.copied().unwrap_or(0) > STEP as u64 || chunk_len < min_len {
-                        true
-                    } else {
-                        chunk_len = 0;
-                        false
-                    }
-                })
-                .collect::<Vec<_>>();
+            let mut assignments = Vec::new();
+            let mut buf = Vec::new();
+            for (idx, ((_, control), _)) in data.iter().enumerate() {
+                if control.copied().unwrap_or(0) > STEP as u64 || buf.len() < min_len {
+                    // continue
+                    buf.push(data[idx]);
+                } else {
+                    // reset
+                    assignments.push(buf.clone());
+                    buf.clear();
+                }
+            }
             let assignments_len = assignments.len();
             let assignments = assignments
                 .into_iter()
@@ -839,7 +839,7 @@ where
                     move |mut region: Region<'_, F>| -> Result<PermutedStatePair<PC::Word>, Error> {
                         self.fill_hash_tbl_body_partial(
                             &mut region,
-                            data,
+                            &data,
                             &mut is_first_pass,
                             is_last_sub_region,
                         )
