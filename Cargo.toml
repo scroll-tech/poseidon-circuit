@@ -9,7 +9,7 @@ resolver = "2"
 bencher = "0.1"
 bitvec = "1"
 ff = "0.13"
-halo2curves = { version = "0.1.0", features = [ "derive_serde" ] }
+halo2curves = { git = "https://github.com/kunxian-xia/halo2curves.git", branch = "feat/sp1", features = [ "derive_serde" ] }
 halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2022_09_10" }
 lazy_static = "1.4"
 log = "0.4"
