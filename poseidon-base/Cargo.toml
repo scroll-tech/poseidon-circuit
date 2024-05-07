@@ -9,4 +9,5 @@ bitvec.workspace = true
 halo2curves.workspace = true
 
 [features]
+default = ["short"]
 short = []
