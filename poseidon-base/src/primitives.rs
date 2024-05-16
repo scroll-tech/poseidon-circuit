@@ -107,7 +107,9 @@ pub(crate) fn permute<
         #[allow(clippy::needless_range_loop)]
         for i in 0..T {
             for j in 0..T {
-                new_state[i] += mds[i][j] * state[j];
+                let mut prod = state[j].clone();
+                prod.mul_assign(mds[i][j]);
+                new_state[i].add_assign(prod);
             }
         }
         *state = new_state;
@@ -115,14 +117,15 @@ pub(crate) fn permute<
 
     let full_round = |state: &mut State<F, T>, rcs: &[F; T]| {
         for (word, rc) in state.iter_mut().zip(rcs.iter()) {
-            *word = S::sbox(*word + rc);
+            word.add_assign(rc);
+            *word = S::sbox(*word);
         }
         apply_mds(state);
     };
 
     let part_round = |state: &mut State<F, T>, rcs: &[F; T]| {
         for (word, rc) in state.iter_mut().zip(rcs.iter()) {
-            *word += rc;
+            word.add_assign(rc);
         }
         // In a partial round, the S-box is only applied to the first state word.
         state[0] = S::sbox(state[0]);
