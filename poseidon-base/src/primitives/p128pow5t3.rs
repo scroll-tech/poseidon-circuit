@@ -25,6 +25,18 @@ pub struct P128Pow5T3<C> {
     _marker: PhantomData<C>,
 }
 
+impl<Fp: P128Pow5T3Constants> P128Pow5T3<Fp> {
+    fn sbox_naive(val: Fp) -> Fp {
+        let mut a = val.clone();
+        a.mul_assign(&val);
+        a.mul_assign(&val);
+        a.mul_assign(&val);
+        a.mul_assign(&val);
+
+        a
+    }
+}
+
 impl<Fp: P128Pow5T3Constants> Spec<Fp, 3, 2> for P128Pow5T3<Fp> {
     fn full_rounds() -> usize {
         8
@@ -35,7 +47,14 @@ impl<Fp: P128Pow5T3Constants> Spec<Fp, 3, 2> for P128Pow5T3<Fp> {
     }
 
     fn sbox(val: Fp) -> Fp {
-        val.pow_vartime([5])
+        #[cfg(not(all(target_os = "zkvm", target_vendor = "succinct")))]
+        {
+            val.pow_vartime([5])
+        }
+        #[cfg(all(target_os = "zkvm", target_vendor = "succinct"))]
+        {
+            Self::sbox_naive(val)
+        }
     }
 
     fn secure_mds() -> usize {
