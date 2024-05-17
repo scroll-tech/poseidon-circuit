@@ -1,6 +1,7 @@
 use crate::primitives::{ConstantLengthIden3, Domain, Hash, Spec, VariableLengthIden3};
 use halo2curves::bn256::Fr;
 use halo2curves::ff::FromUniformBytes;
+use std::sync::OnceLock;
 
 #[cfg(not(feature = "short"))]
 mod chip_long {
@@ -89,6 +90,13 @@ impl Hashable for Fr {
     fn hash_with_domain(inp: [Self; 2], domain: Self) -> Self {
         Self::hasher().hash(inp, domain)
     }
+
+    fn hasher() -> Hash<Self, Self::SpecType, Self::DomainType, 3, 2> {
+        static INIT: OnceLock<
+            Hash<Fr, <Fr as Hashable>::SpecType, <Fr as Hashable>::DomainType, 3, 2>,
+        > = OnceLock::new();
+        INIT.get_or_init(Hash::init).clone()
+    }
 }
 
 impl MessageHashable for Fr {
@@ -97,5 +105,12 @@ impl MessageHashable for Fr {
     fn hash_msg(msg: &[Self], cap: Option<u128>) -> Self {
         Self::msg_hasher()
             .hash_with_cap(msg, cap.unwrap_or(msg.len() as u128 * HASHABLE_DOMAIN_SPEC))
+    }
+
+    fn msg_hasher() -> Hash<Self, <Self as Hashable>::SpecType, <Self as MessageHashable>::DomainType, 3, 2> {
+        static INIT: OnceLock<
+            Hash<Fr, <Fr as Hashable>::SpecType, <Fr as MessageHashable>::DomainType, 3, 2>,
+        > = OnceLock::new();
+        INIT.get_or_init(Hash::init).clone()
     }
 }

@@ -20,7 +20,7 @@ mod chip_long {
 #[cfg(feature = "short")]
 mod chip_short {
     use super::{SpongeChip, SpongeConfig};
-    use crate::poseidon::{SeptidonChip};
+    use crate::poseidon::SeptidonChip;
     /// The configuration of the Poseidon hash chip.
     pub type PoseidonHashConfig<F> = SpongeConfig<F, SeptidonChip>;
     /// The Poseidon hash chip.

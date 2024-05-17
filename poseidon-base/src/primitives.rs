@@ -41,7 +41,7 @@ pub type Mds<F, const T: usize> = [[F; T]; T];
 
 /// A specification for a Poseidon permutation.
 pub trait Spec<F: FromUniformBytes<64> + Ord, const T: usize, const RATE: usize>:
-    fmt::Debug
+    Copy + fmt::Debug
 {
     /// The number of full rounds for this specification.
     ///
@@ -176,18 +176,18 @@ mod private {
 }
 
 /// The state of the `Sponge`.
-pub trait SpongeMode: private::SealedSpongeMode {}
+pub trait SpongeMode: private::SealedSpongeMode + Clone {}
 
 /// The absorbing state of the `Sponge`.
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct Absorbing<F, const RATE: usize>(pub SpongeRate<F, RATE>);
 
 /// The squeezing state of the `Sponge`.
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct Squeezing<F, const RATE: usize>(pub SpongeRate<F, RATE>);
 
-impl<F, const RATE: usize> SpongeMode for Absorbing<F, RATE> {}
-impl<F, const RATE: usize> SpongeMode for Squeezing<F, RATE> {}
+impl<F: Clone, const RATE: usize> SpongeMode for Absorbing<F, RATE> {}
+impl<F: Clone, const RATE: usize> SpongeMode for Squeezing<F, RATE> {}
 
 impl<F: fmt::Debug, const RATE: usize> Absorbing<F, RATE> {
     pub fn init_with(val: F) -> Self {
@@ -202,6 +202,7 @@ impl<F: fmt::Debug, const RATE: usize> Absorbing<F, RATE> {
 }
 
 /// A Poseidon sponge.
+#[derive(Clone)]
 pub(crate) struct Sponge<
     F: FromUniformBytes<64> + Ord,
     S: Spec<F, T, RATE>,
@@ -234,7 +235,7 @@ impl<F: FromUniformBytes<64> + Ord, S: Spec<F, T, RATE>, const T: usize, const R
             mds_matrix,
             round_constants,
             layout,
-            _marker: PhantomData::default(),
+            _marker: PhantomData,
         }
     }
 
@@ -277,7 +278,7 @@ impl<F: FromUniformBytes<64> + Ord, S: Spec<F, T, RATE>, const T: usize, const R
             mds_matrix: self.mds_matrix,
             round_constants: self.round_constants,
             layout: self.layout,
-            _marker: PhantomData::default(),
+            _marker: PhantomData,
         }
     }
 }
@@ -413,6 +414,7 @@ impl<F: FromUniformBytes<64> + Ord, const RATE: usize> Domain<F, RATE> for Varia
 }
 
 /// A Poseidon hash function, built around a sponge.
+#[derive(Clone)]
 pub struct Hash<
     F: FromUniformBytes<64> + Ord,
     S: Spec<F, T, RATE>,
@@ -455,7 +457,7 @@ impl<
     pub fn init() -> Self {
         Hash {
             sponge: Sponge::new(D::initial_capacity_element(), D::layout(T)),
-            _domain: PhantomData::default(),
+            _domain: PhantomData,
         }
     }
 

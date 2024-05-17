@@ -20,7 +20,7 @@ pub trait P128Pow5T3Constants: FromUniformBytes<64> + Ord {
 /// The standard specification for this set of parameters (on either of the Pasta
 /// fields) uses $R_F = 8, R_P = 56$. This is conveniently an even number of
 /// partial rounds, making it easier to construct a Halo 2 circuit.
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct P128Pow5T3<C> {
     _marker: PhantomData<C>,
 }
