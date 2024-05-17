@@ -14,7 +14,8 @@ pub trait CachedConstants: P128Pow5T3Constants {
 
 mod bn254 {
     use super::{CachedConstants, Mds};
-    use crate::primitives::{P128Pow5T3Compact, Spec};
+    use crate::hash::HashSpec;
+    use crate::primitives::{CachedSpec, P128Pow5T3Compact, Spec};
     use ::halo2curves::bn256::Fr as F;
     use lazy_static::lazy_static;
     lazy_static! {
@@ -30,6 +31,18 @@ mod bn254 {
             &CONSTANTS.1
         }
         fn cached_mds_inv() -> &'static Mds<Self> {
+            &CONSTANTS.2
+        }
+    }
+
+    impl CachedSpec<F, 3, 2> for HashSpec<F> {
+        fn cached_round_constants() -> &'static [[F; 3]] {
+            &CONSTANTS.0
+        }
+        fn cached_mds() -> &'static Mds<F> {
+            &CONSTANTS.1
+        }
+        fn cached_mds_inv() -> &'static Mds<F> {
             &CONSTANTS.2
         }
     }

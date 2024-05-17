@@ -9,10 +9,7 @@ use halo2_proofs::{
 };
 use poseidon_base::primitives::{Absorbing, Domain, Mds, Spec, Squeezing, State};
 
-use super::{
-
-    PaddedWord, PermuteChip, PoseidonInstructions, PoseidonSpongeInstructions,
-};
+use super::{PaddedWord, PermuteChip, PoseidonInstructions, PoseidonSpongeInstructions};
 
 /// Trait for a variable in the circuit.
 pub trait Var<F: PrimeField>: Clone + std::fmt::Debug + From<AssignedCell<F, F>> {
