@@ -1,4 +1,4 @@
-use crate::primitives::{ConstantLengthIden3, Domain, Hash, Spec, VariableLengthIden3};
+use crate::primitives::{CachedSpec, ConstantLengthIden3, Domain, Hash, Spec, VariableLengthIden3};
 use halo2curves::bn256::Fr;
 use halo2curves::ff::FromUniformBytes;
 use std::sync::OnceLock;
@@ -38,7 +38,7 @@ pub const HASHABLE_DOMAIN_SPEC: u128 = 1;
 /// indicate an field can be hashed in merkle tree (2 Fields to 1 Field)
 pub trait Hashable: Hashablebase + FromUniformBytes<64> + Ord {
     /// the spec type used in circuit for this hashable field
-    type SpecType: Spec<Self, 3, 2>;
+    type SpecType: CachedSpec<Self, 3, 2>;
     /// the domain type used for hash calculation
     type DomainType: Domain<Self, 2>;
 

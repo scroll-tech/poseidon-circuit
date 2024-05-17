@@ -47,14 +47,16 @@ impl<Fp: P128Pow5T3Constants> Spec<Fp, 3, 2> for P128Pow5T3<Fp> {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test"))]
+#[allow(unused_imports)]
 mod tests {
     use std::marker::PhantomData;
 
+    use crate::params::Mds;
     use halo2curves::ff::{FromUniformBytes, PrimeField};
 
     use super::super::pasta::{fp, test_vectors, Fp};
-    use crate::primitives::{permute, ConstantLength, Hash, Spec};
+    use crate::primitives::{permute, CachedSpec, ConstantLength, Hash, Spec};
 
     /// The same Poseidon specification as poseidon::P128Pow5T3, but constructed
     /// such that its constants will be generated at runtime.
@@ -86,6 +88,18 @@ mod tests {
 
         fn secure_mds() -> usize {
             SECURE_MDS
+        }
+    }
+
+    impl CachedSpec<Fp, 3, 2> for P128Pow5T3Pasta {
+        fn cached_round_constants() -> &'static [[Fp; 3]] {
+            &fp::ROUND_CONSTANTS
+        }
+        fn cached_mds() -> &'static Mds<Fp> {
+            &fp::MDS
+        }
+        fn cached_mds_inv() -> &'static Mds<Fp> {
+            &fp::MDS_INV
         }
     }
 

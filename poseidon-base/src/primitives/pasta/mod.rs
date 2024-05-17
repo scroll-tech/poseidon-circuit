@@ -1,11 +1,13 @@
+use crate::hash::HashSpec;
 use halo2curves::{group::ff::PrimeField, pasta};
 pub use pasta::pallas;
 pub use pasta::Fp;
+
 pub mod fp;
 pub mod test_vectors;
 
 use crate::primitives::p128pow5t3::P128Pow5T3Constants;
-use crate::primitives::Mds;
+use crate::primitives::{CachedSpec, Mds};
 
 impl P128Pow5T3Constants for Fp {
     fn round_constants() -> Vec<[Self; 3]> {
@@ -16,6 +18,18 @@ impl P128Pow5T3Constants for Fp {
     }
     fn mds_inv() -> Mds<Self, 3> {
         fp::MDS_INV
+    }
+}
+
+impl CachedSpec<Fp, 3, 2> for HashSpec<Fp> {
+    fn cached_round_constants() -> &'static [[Fp; 3]] {
+        &fp::ROUND_CONSTANTS
+    }
+    fn cached_mds() -> &'static Mds<Fp, 3> {
+        &fp::MDS
+    }
+    fn cached_mds_inv() -> &'static Mds<Fp, 3> {
+        &fp::MDS_INV
     }
 }
 

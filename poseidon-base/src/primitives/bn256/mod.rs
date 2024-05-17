@@ -21,7 +21,8 @@ impl P128Pow5T3Constants for Fp {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test"))]
+#[allow(unused_imports)]
 mod tests {
     use std::marker::PhantomData;
 
