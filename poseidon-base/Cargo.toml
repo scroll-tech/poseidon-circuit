@@ -8,6 +8,9 @@ lazy_static.workspace = true
 bitvec.workspace = true
 halo2curves.workspace = true
 
+[dev-dependencies]
+subtle.workspace = true
+
 [features]
 default = ["short"]
 short = []

@@ -107,10 +107,25 @@ impl MessageHashable for Fr {
             .hash_with_cap(msg, cap.unwrap_or(msg.len() as u128 * HASHABLE_DOMAIN_SPEC))
     }
 
-    fn msg_hasher() -> Hash<Self, <Self as Hashable>::SpecType, <Self as MessageHashable>::DomainType, 3, 2> {
+    fn msg_hasher(
+    ) -> Hash<Self, <Self as Hashable>::SpecType, <Self as MessageHashable>::DomainType, 3, 2> {
         static INIT: OnceLock<
             Hash<Fr, <Fr as Hashable>::SpecType, <Fr as MessageHashable>::DomainType, 3, 2>,
         > = OnceLock::new();
         INIT.get_or_init(Hash::init).clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_lazy_init() {
+        let _ = Fr::hasher();
+        let _ = Fr::msg_hasher();
+
+        let _ = Fr::hasher();
+        let _ = Fr::msg_hasher();
     }
 }

@@ -58,7 +58,7 @@ mod tests {
 
     /// The same Poseidon specification as poseidon::P128Pow5T3, but constructed
     /// such that its constants will be generated at runtime.
-    #[derive(Debug)]
+    #[derive(Debug, Copy, Clone)]
     pub struct P128Pow5T3Gen<F: PrimeField, const SECURE_MDS: usize>(PhantomData<F>);
 
     type P128Pow5T3Pasta = super::P128Pow5T3<Fp>;
