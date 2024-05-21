@@ -3,7 +3,7 @@
 use std::marker::PhantomData;
 
 use bitvec::prelude::*;
-use halo2curves::ff::FromUniformBytes;
+use halo2curves::ff::{FromUniformBytes, ExtraArithmetic};
 
 const STATE: usize = 80;
 
@@ -43,13 +43,13 @@ impl SboxType {
     }
 }
 
-pub(crate) struct Grain<F: FromUniformBytes<64> + Ord> {
+pub(crate) struct Grain<F: FromUniformBytes<64> + Ord + ExtraArithmetic> {
     state: BitArr!(for 80, in u8, Msb0),
     next_bit: usize,
     _field: PhantomData<F>,
 }
 
-impl<F: FromUniformBytes<64> + Ord> Grain<F> {
+impl<F: FromUniformBytes<64> + Ord + ExtraArithmetic> Grain<F> {
     pub(crate) fn new(sbox: SboxType, t: u16, r_f: u16, r_p: u16) -> Self {
         // Initialize the LFSR state.
         let mut state = bitarr![u8, Msb0; 1; STATE];
@@ -165,7 +165,7 @@ impl<F: FromUniformBytes<64> + Ord> Grain<F> {
     }
 }
 
-impl<F: FromUniformBytes<64> + Ord> Iterator for Grain<F> {
+impl<F: FromUniformBytes<64> + Ord + ExtraArithmetic> Iterator for Grain<F> {
     type Item = bool;
 
     fn next(&mut self) -> Option<Self::Item> {

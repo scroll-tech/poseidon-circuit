@@ -5,7 +5,7 @@ use std::fmt;
 use std::iter;
 use std::marker::PhantomData;
 
-use halo2curves::ff::FromUniformBytes;
+use halo2curves::ff::{FromUniformBytes, ExtraArithmetic};
 
 pub(crate) mod grain;
 pub(crate) mod mds;
@@ -40,7 +40,7 @@ pub type SpongeRate<F, const RATE: usize> = [Option<F>; RATE];
 pub type Mds<F, const T: usize> = [[F; T]; T];
 
 /// A specification for a Poseidon permutation.
-pub trait Spec<F: FromUniformBytes<64> + Ord, const T: usize, const RATE: usize>:
+pub trait Spec<F: FromUniformBytes<64> + Ord + ExtraArithmetic, const T: usize, const RATE: usize>:
     fmt::Debug
 {
     /// The number of full rounds for this specification.
@@ -89,7 +89,7 @@ pub trait Spec<F: FromUniformBytes<64> + Ord, const T: usize, const RATE: usize>
 
 /// Runs the Poseidon permutation on the given state.
 pub(crate) fn permute<
-    F: FromUniformBytes<64> + Ord,
+    F: FromUniformBytes<64> + Ord + ExtraArithmetic,
     S: Spec<F, T, RATE>,
     const T: usize,
     const RATE: usize,
@@ -102,14 +102,13 @@ pub(crate) fn permute<
     let r_p = S::partial_rounds();
 
     let apply_mds = |state: &mut State<F, T>| {
-        let mut new_state = [F::ZERO; T];
+        let mut new_state = [state[0]; T];
         // Matrix multiplication
         #[allow(clippy::needless_range_loop)]
         for i in 0..T {
-            for j in 0..T {
-                let mut prod = state[j].clone();
-                prod.mul_assign(&mds[i][j]);
-                new_state[i].add_assign(&prod);
+            new_state[i].mul_assign(&mds[i][0]);
+            for j in 1..T {
+                new_state[i].mul_add_assign(&state[j], &mds[i][j]);
             }
         }
         *state = new_state;
@@ -144,7 +143,7 @@ pub(crate) fn permute<
 }
 
 fn poseidon_sponge<
-    F: FromUniformBytes<64> + Ord,
+    F: FromUniformBytes<64> + Ord + ExtraArithmetic,
     S: Spec<F, T, RATE>,
     const T: usize,
     const RATE: usize,
@@ -206,7 +205,7 @@ impl<F: fmt::Debug, const RATE: usize> Absorbing<F, RATE> {
 
 /// A Poseidon sponge.
 pub(crate) struct Sponge<
-    F: FromUniformBytes<64> + Ord,
+    F: FromUniformBytes<64> + Ord + ExtraArithmetic,
     S: Spec<F, T, RATE>,
     M: SpongeMode,
     const T: usize,
@@ -220,7 +219,7 @@ pub(crate) struct Sponge<
     _marker: PhantomData<S>,
 }
 
-impl<F: FromUniformBytes<64> + Ord, S: Spec<F, T, RATE>, const T: usize, const RATE: usize>
+impl<F: FromUniformBytes<64> + Ord + ExtraArithmetic, S: Spec<F, T, RATE>, const T: usize, const RATE: usize>
     Sponge<F, S, Absorbing<F, RATE>, T, RATE>
 {
     /// Constructs a new sponge for the given Poseidon specification.
@@ -285,7 +284,7 @@ impl<F: FromUniformBytes<64> + Ord, S: Spec<F, T, RATE>, const T: usize, const R
     }
 }
 
-impl<F: FromUniformBytes<64> + Ord, S: Spec<F, T, RATE>, const T: usize, const RATE: usize>
+impl<F: FromUniformBytes<64> + Ord + ExtraArithmetic, S: Spec<F, T, RATE>, const T: usize, const RATE: usize>
     Sponge<F, S, Squeezing<F, RATE>, T, RATE>
 {
     /// Squeezes an element from the sponge.
@@ -309,7 +308,7 @@ impl<F: FromUniformBytes<64> + Ord, S: Spec<F, T, RATE>, const T: usize, const R
 }
 
 /// A domain in which a Poseidon hash function is being used.
-pub trait Domain<F: FromUniformBytes<64> + Ord, const RATE: usize> {
+pub trait Domain<F: FromUniformBytes<64> + Ord + ExtraArithmetic, const RATE: usize> {
     /// Iterator that outputs padding field elements.
     type Padding: IntoIterator<Item = F>;
 
@@ -336,7 +335,7 @@ pub trait Domain<F: FromUniformBytes<64> + Ord, const RATE: usize> {
 #[derive(Clone, Copy, Debug)]
 pub struct ConstantLength<const L: usize>;
 
-impl<F: FromUniformBytes<64> + Ord, const RATE: usize, const L: usize> Domain<F, RATE>
+impl<F: FromUniformBytes<64> + Ord + ExtraArithmetic, const RATE: usize, const L: usize> Domain<F, RATE>
     for ConstantLength<L>
 {
     type Padding = iter::Take<iter::Repeat<F>>;
@@ -366,7 +365,7 @@ impl<F: FromUniformBytes<64> + Ord, const RATE: usize, const L: usize> Domain<F,
 #[derive(Clone, Copy, Debug)]
 pub struct ConstantLengthIden3<const L: usize>;
 
-impl<F: FromUniformBytes<64> + Ord, const RATE: usize, const L: usize> Domain<F, RATE>
+impl<F: FromUniformBytes<64> + Ord + ExtraArithmetic, const RATE: usize, const L: usize> Domain<F, RATE>
     for ConstantLengthIden3<L>
 {
     type Padding = <ConstantLength<L> as Domain<F, RATE>>::Padding;
@@ -393,7 +392,7 @@ impl<F: FromUniformBytes<64> + Ord, const RATE: usize, const L: usize> Domain<F,
 #[derive(Clone, Copy, Debug)]
 pub struct VariableLengthIden3;
 
-impl<F: FromUniformBytes<64> + Ord, const RATE: usize> Domain<F, RATE> for VariableLengthIden3 {
+impl<F: FromUniformBytes<64> + Ord + ExtraArithmetic, const RATE: usize> Domain<F, RATE> for VariableLengthIden3 {
     type Padding = <ConstantLength<1> as Domain<F, RATE>>::Padding;
 
     fn name() -> String {
@@ -417,7 +416,7 @@ impl<F: FromUniformBytes<64> + Ord, const RATE: usize> Domain<F, RATE> for Varia
 
 /// A Poseidon hash function, built around a sponge.
 pub struct Hash<
-    F: FromUniformBytes<64> + Ord,
+    F: FromUniformBytes<64> + Ord + ExtraArithmetic,
     S: Spec<F, T, RATE>,
     D: Domain<F, RATE>,
     const T: usize,
@@ -428,7 +427,7 @@ pub struct Hash<
 }
 
 impl<
-        F: FromUniformBytes<64> + Ord,
+        F: FromUniformBytes<64> + Ord + ExtraArithmetic,
         S: Spec<F, T, RATE>,
         D: Domain<F, RATE>,
         const T: usize,
@@ -447,7 +446,7 @@ impl<
 }
 
 impl<
-        F: FromUniformBytes<64> + Ord,
+        F: FromUniformBytes<64> + Ord + ExtraArithmetic,
         S: Spec<F, T, RATE>,
         D: Domain<F, RATE>,
         const T: usize,
@@ -469,7 +468,7 @@ impl<
 }
 
 impl<
-        F: FromUniformBytes<64> + Ord,
+        F: FromUniformBytes<64> + Ord + ExtraArithmetic,
         S: Spec<F, T, RATE>,
         const T: usize,
         const RATE: usize,
@@ -489,7 +488,7 @@ impl<
 }
 
 impl<
-        F: FromUniformBytes<64> + Ord,
+        F: FromUniformBytes<64> + Ord + ExtraArithmetic,
         S: Spec<F, T, RATE>,
         const T: usize,
         const RATE: usize,
@@ -510,7 +509,7 @@ impl<
     }
 }
 
-impl<F: FromUniformBytes<64> + Ord, S: Spec<F, T, RATE>, const T: usize, const RATE: usize>
+impl<F: FromUniformBytes<64> + Ord + ExtraArithmetic, S: Spec<F, T, RATE>, const T: usize, const RATE: usize>
     Hash<F, S, VariableLengthIden3, T, RATE>
 {
     /// Hashes the given input.

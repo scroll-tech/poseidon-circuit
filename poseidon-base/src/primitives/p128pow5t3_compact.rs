@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use halo2curves::ff::{FromUniformBytes, PrimeField};
+use halo2curves::ff::{FromUniformBytes, PrimeField, ExtraArithmetic};
 
 use super::p128pow5t3::P128Pow5T3Constants;
 use super::{Mds, Spec};
@@ -25,7 +25,7 @@ impl<Fp: FromUniformBytes<64>> P128Pow5T3Compact<Fp> {
     }
 }
 
-impl<Fp: P128Pow5T3Constants + FromUniformBytes<64> + Ord> Spec<Fp, 3, 2>
+impl<Fp: P128Pow5T3Constants + FromUniformBytes<64> + Ord + ExtraArithmetic> Spec<Fp, 3, 2>
     for P128Pow5T3Compact<Fp>
 {
     fn full_rounds() -> usize {

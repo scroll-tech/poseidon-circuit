@@ -24,5 +24,10 @@ thiserror = "1.0"
 opt-level = 3
 debug-assertions = true
 
+[patch.crates-io]
+ff = { git = "https://github.com/scroll-tech/ff", rev = "7e94aa6" }
+[patch."https://github.com/kunxian-xia/halo2curves.git"]
+halo2curves = { git = "https://github.com/lightsing/halo2curves.git", branch = "feat/sp1" }
+
 [patch."https://github.com/privacy-scaling-explorations/halo2.git"]
 halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "v1.0" }
