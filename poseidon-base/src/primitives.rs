@@ -108,8 +108,8 @@ pub(crate) fn permute<
         for i in 0..T {
             for j in 0..T {
                 let mut prod = state[j].clone();
-                prod.mul_assign(mds[i][j]);
-                new_state[i].add_assign(prod);
+                prod.mul_assign(&mds[i][j]);
+                new_state[i].add_assign(&prod);
             }
         }
         *state = new_state;
