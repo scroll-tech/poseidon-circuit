@@ -1,4 +1,5 @@
 use std::marker::PhantomData;
+use std::mem::MaybeUninit;
 
 use halo2curves::ff::{FromUniformBytes, ExtraArithmetic};
 
@@ -25,18 +26,6 @@ pub struct P128Pow5T3<C> {
     _marker: PhantomData<C>,
 }
 
-impl<Fp: P128Pow5T3Constants> P128Pow5T3<Fp> {
-    fn sbox_naive(val: Fp) -> Fp {
-        let mut a = val.clone();
-        a.mul_assign(&val);
-        a.mul_assign(&val);
-        a.mul_assign(&val);
-        a.mul_assign(&val);
-
-        a
-    }
-}
-
 impl<Fp: P128Pow5T3Constants> Spec<Fp, 3, 2> for P128Pow5T3<Fp> {
     fn full_rounds() -> usize {
         8
@@ -53,8 +42,55 @@ impl<Fp: P128Pow5T3Constants> Spec<Fp, 3, 2> for P128Pow5T3<Fp> {
         }
         #[cfg(all(target_os = "zkvm", target_vendor = "succinct"))]
         {
-            Self::sbox_naive(val)
+            unimplemented!()
         }
+    }
+
+    #[cfg(all(target_os = "zkvm", target_vendor = "succinct"))]
+    fn sbox_inplace(val: &mut Fp) {
+        const MEMCPY_32: u32 = 0x00_00_01_30;
+        const BN254_SCALAR_MUL: u32 = 0x00_01_01_20;
+
+        let mut a = MaybeUninit::<Fp>::uninit();
+
+        unsafe {
+            core::arch::asm!(
+                "ecall",
+                in("t0") MEMCPY_32,
+                in("a0") val,
+                in("a1") a.as_mut_ptr(),
+            );
+            core::arch::asm!(
+                "ecall",
+                in("t0") BN254_SCALAR_MUL,
+                in("a0") &mut a,
+                in("a1") val,
+            );
+            core::arch::asm!(
+                "ecall",
+                in("t0") BN254_SCALAR_MUL,
+                in("a0") &mut a,
+                in("a1") val,
+            );
+            core::arch::asm!(
+                "ecall",
+                in("t0") BN254_SCALAR_MUL,
+                in("a0") &mut a,
+                in("a1") val,
+            );
+            core::arch::asm!(
+                "ecall",
+                in("t0") BN254_SCALAR_MUL,
+                in("a0") &mut a,
+                in("a1") val,
+            );
+            core::arch::asm!(
+                "ecall",
+                in("t0") MEMCPY_32,
+                in("a0") &a,
+                in("a1") val,
+            );
+        };
     }
 
     fn secure_mds() -> usize {
