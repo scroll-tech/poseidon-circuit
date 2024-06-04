@@ -1,5 +1,6 @@
 //! The Poseidon algebraic hash function.
 
+use std::arch::asm;
 use std::convert::TryInto;
 use std::fmt;
 use std::iter;
@@ -105,8 +106,38 @@ pub(crate) fn permute<
     let r_f = S::full_rounds() / 2;
     let r_p = S::partial_rounds();
 
-    let apply_mds = |state: &mut State<F, T>| {
-        let mut new_state = [state[0]; T];
+    // here's some assumption for optimization
+    // assert [F; T] has same size as F * T (aka. no padding)
+    debug_assert_eq!(core::mem::size_of::<[F; T]>(), core::mem::size_of::<F>() * T);
+    // assert F is 32 bytes
+    debug_assert_eq!(core::mem::size_of::<F>(), 32);
+    // assert T is 3
+    debug_assert_eq!(T, 3);
+    // assert r_f is 4
+    debug_assert_eq!(r_f, 4);
+    // assert r_p is 56
+    debug_assert_eq!(r_p, 56);
+    // assert round_constants len is 8 + 56 = 64
+    debug_assert_eq!(round_constants.len(), 64);
+
+    // shared between each apply_mds, since it will be initialized
+    let mut new_state = [state[0]; T];
+
+    let mut apply_mds = |state: &mut State<F, T>| {
+        const MEMCPY_32: u32 = 0x00_00_01_30;
+        const MEMCPY_64: u32 = 0x00_00_01_31;
+
+        for i in 0..T {
+            unsafe {
+                asm!(
+                    "ecall",
+                    in("t0") MEMCPY_32,
+                    in("a0") &state[0],
+                    in("a1") new_state.as_mut_ptr().add(i),
+                );
+            }
+        }
+
         // Matrix multiplication
         #[allow(clippy::needless_range_loop)]
         for i in 0..T {
@@ -115,35 +146,75 @@ pub(crate) fn permute<
                 new_state[i].mul_add_assign(&state[j], &mds[i][j]);
             }
         }
-        *state = new_state;
-    };
 
-    let full_round = |state: &mut State<F, T>, rcs: &[F; T]| {
-        for (word, rc) in state.iter_mut().zip(rcs.iter()) {
-            word.add_assign(rc);
-            S::sbox_inplace(word);
+
+        // Copy the new state back to the old state
+        unsafe {
+            asm!(
+                "ecall",
+                in("t0") MEMCPY_64,
+                in("a0") &new_state[0],
+                in("a1") &mut state[0],
+            );
+            asm!(
+                "ecall",
+                in("t0") MEMCPY_32,
+                in("a0") &new_state[2],
+                in("a1") &mut state[2],
+            );
         }
-        apply_mds(state);
+
+        // for i in 0..T {
+        //     unsafe {
+        //         asm!(
+        //             "ecall",
+        //             in("t0") MEMCPY_32,
+        //             in("a0") &new_state[i],
+        //             in("a1") &mut state[i],
+        //         );
+        //     }
+        // }
     };
 
-    let part_round = |state: &mut State<F, T>, rcs: &[F; T]| {
-        for (word, rc) in state.iter_mut().zip(rcs.iter()) {
-            word.add_assign(rc);
-        }
-        // In a partial round, the S-box is only applied to the first state word.
-        S::sbox_inplace(&mut state[0]);
-        apply_mds(state);
-    };
 
-    iter::empty()
-        .chain(iter::repeat(&full_round as &dyn Fn(&mut State<F, T>, &[F; T])).take(r_f))
-        .chain(iter::repeat(&part_round as &dyn Fn(&mut State<F, T>, &[F; T])).take(r_p))
-        .chain(iter::repeat(&full_round as &dyn Fn(&mut State<F, T>, &[F; T])).take(r_f))
-        .zip(round_constants.iter())
-        .fold(state, |state, (round, rcs)| {
-            round(state, rcs);
-            state
-        });
+    for i in 0..r_f {
+        full_round::<F, S, T, RATE>(state, &round_constants[i], &mut apply_mds);
+    }
+    for i in r_f..r_f+r_p {
+        partial_round::<F, S, T, RATE>(state, &round_constants[i], &mut apply_mds);
+    }
+    for i in r_f+r_p..2*r_f+r_p {
+        full_round::<F, S, T, RATE>(state, &round_constants[i], &mut apply_mds);
+    }
+}
+
+#[inline(always)]
+fn full_round<
+    F: FromUniformBytes<64> + Ord + ExtraArithmetic,
+    S: Spec<F, T, RATE>,
+    const T: usize,
+    const RATE: usize,
+>(state: &mut State<F, T>, rcs: &[F; T], mut apply_mds: impl FnMut(&mut State<F, T>)) {
+    for (word, rc) in state.iter_mut().zip(rcs.iter()) {
+        word.add_assign(rc);
+        S::sbox_inplace(word);
+    }
+    (apply_mds)(state);
+}
+
+#[inline(always)]
+fn partial_round<
+    F: FromUniformBytes<64> + Ord + ExtraArithmetic,
+    S: Spec<F, T, RATE>,
+    const T: usize,
+    const RATE: usize,
+>(state: &mut State<F, T>, rcs: &[F; T], mut apply_mds: impl FnMut(&mut State<F, T>)){
+    for (word, rc) in state.iter_mut().zip(rcs.iter()) {
+        word.add_assign(rc);
+    }
+    // In a partial round, the S-box is only applied to the first state word.
+    S::sbox_inplace(&mut state[0]);
+    apply_mds(state);
 }
 
 fn poseidon_sponge<
