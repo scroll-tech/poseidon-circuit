@@ -1,5 +1,4 @@
 use std::marker::PhantomData;
-use std::mem::MaybeUninit;
 
 use halo2curves::ff::{FromUniformBytes, ExtraArithmetic};
 
@@ -49,9 +48,10 @@ impl<Fp: P128Pow5T3Constants> Spec<Fp, 3, 2> for P128Pow5T3<Fp> {
     #[cfg(all(target_os = "zkvm", target_vendor = "succinct"))]
     fn sbox_inplace(val: &mut Fp) {
         const MEMCPY_32: u32 = 0x00_00_01_30;
-        const BN254_SCALAR_MUL: u32 = 0x00_01_01_20;
+        const BN254_SCALAR_MAC: u32 = 0x00_01_01_21;
 
-        let mut a = MaybeUninit::<Fp>::uninit();
+        let mut a = std::mem::MaybeUninit::<Fp>::uninit();
+        let arg2 = [&Fp::ZERO, &Fp::ZERO, &val];
 
         unsafe {
             core::arch::asm!(
@@ -60,30 +60,9 @@ impl<Fp: P128Pow5T3Constants> Spec<Fp, 3, 2> for P128Pow5T3<Fp> {
                 in("a0") val,
                 in("a1") a.as_mut_ptr(),
             );
-            core::arch::asm!(
-                "ecall",
-                in("t0") BN254_SCALAR_MUL,
-                in("a0") &mut a,
-                in("a1") val,
-            );
-            core::arch::asm!(
-                "ecall",
-                in("t0") BN254_SCALAR_MUL,
-                in("a0") &mut a,
-                in("a1") val,
-            );
-            core::arch::asm!(
-                "ecall",
-                in("t0") BN254_SCALAR_MUL,
-                in("a0") &mut a,
-                in("a1") val,
-            );
-            core::arch::asm!(
-                "ecall",
-                in("t0") BN254_SCALAR_MUL,
-                in("a0") &mut a,
-                in("a1") val,
-            );
+
+            a.assume_init_mut().mul_assign4(&*val);
+
             core::arch::asm!(
                 "ecall",
                 in("t0") MEMCPY_32,
