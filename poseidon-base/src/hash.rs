@@ -1,6 +1,6 @@
 use crate::primitives::{ConstantLengthIden3, Domain, Hash, Spec, VariableLengthIden3};
 use halo2curves::bn256::Fr;
-use halo2curves::ff::FromUniformBytes;
+use halo2curves::ff::{FromUniformBytes, ExtraArithmetic};
 
 #[cfg(not(feature = "short"))]
 mod chip_long {
@@ -35,7 +35,7 @@ pub const HASHABLE_DOMAIN_SPEC: u128 = 0x10000000000000000;
 pub const HASHABLE_DOMAIN_SPEC: u128 = 1;
 
 /// indicate an field can be hashed in merkle tree (2 Fields to 1 Field)
-pub trait Hashable: Hashablebase + FromUniformBytes<64> + Ord {
+pub trait Hashable: Hashablebase + FromUniformBytes<64> + Ord + ExtraArithmetic {
     /// the spec type used in circuit for this hashable field
     type SpecType: Spec<Self, 3, 2>;
     /// the domain type used for hash calculation

@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use halo2curves::ff::{FromUniformBytes, PrimeField};
+use halo2curves::ff::{FromUniformBytes, PrimeField, ExtraArithmetic};
 
 use super::p128pow5t3::P128Pow5T3Constants;
 use super::{Mds, Spec};
@@ -13,7 +13,19 @@ pub struct P128Pow5T3Compact<Fp> {
     _marker: PhantomData<Fp>,
 }
 
-impl<Fp: P128Pow5T3Constants + FromUniformBytes<64> + Ord> Spec<Fp, 3, 2>
+impl<Fp: FromUniformBytes<64>> P128Pow5T3Compact<Fp> {
+    fn sbox_naive(val: Fp) -> Fp {
+        let mut a = val.clone();
+        a.mul_assign(val);
+        a.mul_assign(val);
+        a.mul_assign(val);
+        a.mul_assign(val);
+
+        a
+    }
+}
+
+impl<Fp: P128Pow5T3Constants + FromUniformBytes<64> + Ord + ExtraArithmetic> Spec<Fp, 3, 2>
     for P128Pow5T3Compact<Fp>
 {
     fn full_rounds() -> usize {
@@ -25,10 +37,15 @@ impl<Fp: P128Pow5T3Constants + FromUniformBytes<64> + Ord> Spec<Fp, 3, 2>
     }
 
     fn sbox(val: Fp) -> Fp {
-        // much faster than val.pow_vartime([5])
-        let a = val * val;
-        let b = a * a;
-        b * val
+        #[cfg(not(all(target_os = "zkvm", target_vendor = "succinct")))]
+        {
+            // much faster than val.pow_vartime([5])
+            let a = val * val;
+            let b = a * a;
+            b * val
+        }
+        #[cfg(all(target_os = "zkvm", target_vendor = "succinct"))]
+        Self::sbox_naive(val)
     }
 
     fn secure_mds() -> usize {

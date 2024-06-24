@@ -1,11 +1,12 @@
 use std::marker::PhantomData;
+use std::mem::MaybeUninit;
 
-use halo2curves::ff::FromUniformBytes;
+use halo2curves::ff::{FromUniformBytes, ExtraArithmetic};
 
 use super::{Mds, Spec};
 
 /// The trait required for fields can handle a pow5 sbox, 3 field, 2 rate permutation
-pub trait P128Pow5T3Constants: FromUniformBytes<64> + Ord {
+pub trait P128Pow5T3Constants: FromUniformBytes<64> + Ord + ExtraArithmetic {
     fn partial_rounds() -> usize {
         56
     }
@@ -35,7 +36,61 @@ impl<Fp: P128Pow5T3Constants> Spec<Fp, 3, 2> for P128Pow5T3<Fp> {
     }
 
     fn sbox(val: Fp) -> Fp {
-        val.pow_vartime([5])
+        #[cfg(not(all(target_os = "zkvm", target_vendor = "succinct")))]
+        {
+            val.pow_vartime([5])
+        }
+        #[cfg(all(target_os = "zkvm", target_vendor = "succinct"))]
+        {
+            unimplemented!()
+        }
+    }
+
+    #[cfg(all(target_os = "zkvm", target_vendor = "succinct"))]
+    fn sbox_inplace(val: &mut Fp) {
+        const MEMCPY_32: u32 = 0x00_00_01_30;
+        const BN254_SCALAR_MUL: u32 = 0x00_01_01_20;
+
+        let mut a = MaybeUninit::<Fp>::uninit();
+
+        unsafe {
+            core::arch::asm!(
+                "ecall",
+                in("t0") MEMCPY_32,
+                in("a0") val,
+                in("a1") a.as_mut_ptr(),
+            );
+            core::arch::asm!(
+                "ecall",
+                in("t0") BN254_SCALAR_MUL,
+                in("a0") &mut a,
+                in("a1") val,
+            );
+            core::arch::asm!(
+                "ecall",
+                in("t0") BN254_SCALAR_MUL,
+                in("a0") &mut a,
+                in("a1") val,
+            );
+            core::arch::asm!(
+                "ecall",
+                in("t0") BN254_SCALAR_MUL,
+                in("a0") &mut a,
+                in("a1") val,
+            );
+            core::arch::asm!(
+                "ecall",
+                in("t0") BN254_SCALAR_MUL,
+                in("a0") &mut a,
+                in("a1") val,
+            );
+            core::arch::asm!(
+                "ecall",
+                in("t0") MEMCPY_32,
+                in("a0") &a,
+                in("a1") val,
+            );
+        };
     }
 
     fn secure_mds() -> usize {
@@ -69,7 +124,7 @@ mod tests {
         }
     }
 
-    impl<F: FromUniformBytes<64> + Ord, const SECURE_MDS: usize> Spec<F, 3, 2>
+    impl<F: FromUniformBytes<64> + Ord + ExtraArithmetic, const SECURE_MDS: usize> Spec<F, 3, 2>
         for P128Pow5T3Gen<F, SECURE_MDS>
     {
         fn full_rounds() -> usize {
@@ -91,7 +146,7 @@ mod tests {
 
     #[test]
     fn verify_constants() {
-        fn verify_constants_helper<F: FromUniformBytes<64> + Ord>(
+        fn verify_constants_helper<F: FromUniformBytes<64> + Ord + ExtraArithmetic>(
             expected_round_constants: [[F; 3]; 64],
             expected_mds: [[F; 3]; 3],
             expected_mds_inv: [[F; 3]; 3],

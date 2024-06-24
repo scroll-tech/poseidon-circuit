@@ -1,7 +1,7 @@
 use std::convert::TryInto;
 use std::iter;
 
-use ff::{FromUniformBytes, PrimeField};
+use ff::{FromUniformBytes, PrimeField, ExtraArithmetic};
 use halo2_proofs::{
     circuit::{AssignedCell, Cell, Chip, Layouter, Region, Value},
     plonk::{Advice, Any, Column, ConstraintSystem, Error, Expression, Fixed, Selector},
@@ -62,7 +62,7 @@ pub struct Pow5Chip<F: PrimeField, const WIDTH: usize, const RATE: usize> {
     config: Pow5Config<F, WIDTH, RATE>,
 }
 
-impl<F: FromUniformBytes<64> + Ord, const WIDTH: usize, const RATE: usize>
+impl<F: FromUniformBytes<64> + Ord + ExtraArithmetic, const WIDTH: usize, const RATE: usize>
     Pow5Chip<F, WIDTH, RATE>
 {
     /// Configures this chip for use in a circuit.
@@ -248,7 +248,7 @@ impl<F: FromUniformBytes<64> + Ord, const WIDTH: usize, const RATE: usize>
     }
 }
 
-impl<F: FromUniformBytes<64> + Ord, const WIDTH: usize, const RATE: usize> Chip<F>
+impl<F: FromUniformBytes<64> + Ord + ExtraArithmetic, const WIDTH: usize, const RATE: usize> Chip<F>
     for Pow5Chip<F, WIDTH, RATE>
 {
     type Config = Pow5Config<F, WIDTH, RATE>;
@@ -263,7 +263,7 @@ impl<F: FromUniformBytes<64> + Ord, const WIDTH: usize, const RATE: usize> Chip<
     }
 }
 
-impl<F: FromUniformBytes<64> + Ord, S: Spec<F, 3, 2>> PermuteChip<F, S, 3, 2>
+impl<F: FromUniformBytes<64> + Ord + ExtraArithmetic, S: Spec<F, 3, 2>> PermuteChip<F, S, 3, 2>
     for Pow5Chip<F, 3, 2>
 {
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
@@ -286,7 +286,7 @@ impl<F: FromUniformBytes<64> + Ord, S: Spec<F, 3, 2>> PermuteChip<F, S, 3, 2>
 }
 
 impl<
-        F: FromUniformBytes<64> + Ord,
+        F: FromUniformBytes<64> + Ord + ExtraArithmetic,
         S: Spec<F, WIDTH, RATE>,
         const WIDTH: usize,
         const RATE: usize,
@@ -356,7 +356,7 @@ impl<
 }
 
 impl<
-        F: FromUniformBytes<64> + Ord,
+        F: FromUniformBytes<64> + Ord + ExtraArithmetic,
         S: Spec<F, WIDTH, RATE>,
         D: Domain<F, RATE>,
         const WIDTH: usize,
