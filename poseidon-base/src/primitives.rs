@@ -163,6 +163,17 @@ pub(crate) fn permute<
                 in("a1") &mut state[2],
             );
         }
+
+        // for i in 0..T {
+        //     unsafe {
+        //         asm!(
+        //             "ecall",
+        //             in("t0") MEMCPY_32,
+        //             in("a0") &new_state[i],
+        //             in("a1") &mut state[i],
+        //         );
+        //     }
+        // }
     };
 
 
