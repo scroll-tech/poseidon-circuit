@@ -1,6 +1,6 @@
 use crate::primitives::{ConstantLengthIden3, Domain, Hash, Spec, VariableLengthIden3};
 use halo2curves::bn256::Fr;
-use halo2curves::ff::{FromUniformBytes, ExtraArithmetic};
+use halo2curves::ff::{ExtraArithmetic, FromUniformBytes};
 
 #[cfg(not(feature = "short"))]
 mod chip_long {
@@ -87,6 +87,24 @@ impl Hashable for Fr {
     type DomainType = ConstantLengthIden3<2>;
 
     fn hash_with_domain(inp: [Self; 2], domain: Self) -> Self {
+        #[cfg(feature = "zkvm-hint")]
+        {
+            use halo2curves::ff::PrimeField;
+
+            #[cfg(feature = "zkvm-hint-scroll")]
+            use sp1_lib::io::read_vec;
+            #[cfg(feature = "zkvm-hint-upstream")]
+            use sp1_lib_upstream::io::read_vec;
+            #[cfg(any(
+                all(not(feature = "zkvm-hint-upstream"), not(feature = "zkvm-hint-scroll")),
+                all(feature = "zkvm-hint-upstream", feature = "zkvm-hint-scroll")
+            ))]
+            compile_error!("Exactly one of the `zkvm-hint-upstream` and `zkvm-hint-scroll` features must be enabled");
+
+            return Fr::from_repr_vartime(read_vec().try_into().unwrap())
+        }
+
+        #[cfg(not(feature = "zkvm-hint"))]
         Self::hasher().hash(inp, domain)
     }
 }
