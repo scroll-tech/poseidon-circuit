@@ -1,6 +1,9 @@
 use crate::primitives::{ConstantLengthIden3, Domain, Hash, Spec, VariableLengthIden3};
 use halo2curves::bn256::Fr;
-use halo2curves::ff::FromUniformBytes;
+use halo2curves::ff::{FromUniformBytes, PrimeField};
+use std::sync::Mutex;
+
+pub static ZKVM_HINT_RESULTS: Mutex<Vec<[u8; 32]>> = Mutex::new(Vec::new());
 
 #[cfg(not(feature = "short"))]
 mod chip_long {
@@ -87,7 +90,9 @@ impl Hashable for Fr {
     type DomainType = ConstantLengthIden3<2>;
 
     fn hash_with_domain(inp: [Self; 2], domain: Self) -> Self {
-        Self::hasher().hash(inp, domain)
+        let result = Self::hasher().hash(inp, domain);
+        ZKVM_HINT_RESULTS.lock().unwrap().push(result.to_repr());
+        result
     }
 }
 
