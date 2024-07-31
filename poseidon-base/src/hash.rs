@@ -101,7 +101,7 @@ impl Hashable for Fr {
             ))]
             compile_error!("Exactly one of the `zkvm-hint-upstream` and `zkvm-hint-scroll` features must be enabled");
 
-            return Fr::from_repr_vartime(read_vec().try_into().unwrap())
+            return Fr::from_repr_vartime(read_vec().try_into().unwrap()).unwrap()
         }
 
         #[cfg(not(feature = "zkvm-hint"))]
