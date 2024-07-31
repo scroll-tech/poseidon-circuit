@@ -3,6 +3,7 @@ use halo2curves::bn256::Fr;
 use halo2curves::ff::{FromUniformBytes, PrimeField};
 use std::sync::Mutex;
 
+#[cfg(feature = "zkvm-hint")]
 pub static ZKVM_HINT_RESULTS: Mutex<Vec<[u8; 32]>> = Mutex::new(Vec::new());
 
 #[cfg(not(feature = "short"))]
@@ -91,6 +92,7 @@ impl Hashable for Fr {
 
     fn hash_with_domain(inp: [Self; 2], domain: Self) -> Self {
         let result = Self::hasher().hash(inp, domain);
+        #[cfg(feature = "zkvm-hint")]
         ZKVM_HINT_RESULTS.lock().unwrap().push(result.to_repr());
         result
     }
