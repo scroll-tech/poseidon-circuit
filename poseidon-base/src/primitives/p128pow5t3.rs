@@ -42,6 +42,7 @@ impl<Fp: P128Pow5T3Constants> Spec<Fp, 3, 2> for P128Pow5T3<Fp> {
         }
         #[cfg(all(target_os = "zkvm", target_vendor = "succinct"))]
         {
+            let _ = val;
             unimplemented!()
         }
     }

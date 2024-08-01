@@ -3,7 +3,11 @@ use halo2curves::bn256::Fr;
 use halo2curves::ff::{ExtraArithmetic, FromUniformBytes};
 
 // copy from https://github.com/rust-lang/log/blob/master/src/lib.rs#L452
-#[cfg(feature = "zkvm-hint")]
+#[cfg(all(
+    not(target_os = "zkvm"),
+    not(target_vendor = "succinct"),
+    feature = "zkvm-hint"
+))]
 mod zkvm_hints {
     pub static mut ZKVM_HINT_HOOK: &dyn Fn([u8; 32]) = &|_| {};
     pub static STATE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
@@ -46,9 +50,17 @@ mod zkvm_hints {
     }
 }
 
-#[cfg(feature = "zkvm-hint")]
+#[cfg(all(
+    not(target_os = "zkvm"),
+    not(target_vendor = "succinct"),
+    feature = "zkvm-hint"
+))]
 pub use zkvm_hints::set_zkvm_hint_hook;
-#[cfg(feature = "zkvm-hint")]
+#[cfg(all(
+    not(target_os = "zkvm"),
+    not(target_vendor = "succinct"),
+    feature = "zkvm-hint"
+))]
 use zkvm_hints::*;
 
 #[cfg(not(feature = "short"))]
@@ -139,10 +151,9 @@ impl Hashable for Fr {
 
     #[cfg(all(target_os = "zkvm", target_vendor = "succinct"))]
     fn hash_with_domain(inp: [Self; 2], domain: Self) -> Self {
-        use sp1_lib::io::read_vec;
-
         #[cfg(feature = "zkvm-hint")]
         {
+            let _ = (inp, domain);
             use halo2curves::ff::PrimeField;
             use sp1_lib::io::read_vec;
 
