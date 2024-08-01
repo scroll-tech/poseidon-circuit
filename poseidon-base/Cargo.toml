@@ -12,5 +12,3 @@ halo2curves.workspace = true
 default = ["short"]
 short = []
 zkvm-hint = []
-zkvm-hint-scroll = []
-zkvm-hint-upstream = []
