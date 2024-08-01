@@ -1,6 +1,55 @@
 use crate::primitives::{ConstantLengthIden3, Domain, Hash, Spec, VariableLengthIden3};
 use halo2curves::bn256::Fr;
-use halo2curves::ff::{FromUniformBytes, ExtraArithmetic};
+use halo2curves::ff::{ExtraArithmetic, FromUniformBytes};
+
+// copy from https://github.com/rust-lang/log/blob/master/src/lib.rs#L452
+#[cfg(feature = "zkvm-hint")]
+mod zkvm_hints {
+    pub static mut ZKVM_HINT_HOOK: &dyn Fn([u8; 32]) = &|_| {};
+    pub static STATE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+    #[derive(Debug)]
+    pub struct SetZkvmHintHookError(pub(super) ());
+
+    pub const UNINITIALIZED: usize = 0;
+    pub const INITIALIZING: usize = 1;
+    pub const INITIALIZED: usize = 2;
+
+    // copy from https://github.com/rust-lang/log/blob/master/src/lib.rs#L1400
+    #[cfg(all(feature = "zkvm-hint", target_has_atomic = "ptr"))]
+    pub fn set_zkvm_hint_hook<F>(make_callback: F) -> Result<(), SetZkvmHintHookError>
+    where
+        F: FnOnce() -> &'static dyn Fn([u8; 32]),
+    {
+        use std::sync::atomic::Ordering;
+        match STATE.compare_exchange(
+            UNINITIALIZED,
+            INITIALIZING,
+            Ordering::Acquire,
+            Ordering::Relaxed,
+        ) {
+            Ok(UNINITIALIZED) => {
+                unsafe {
+                    ZKVM_HINT_HOOK = make_callback();
+                }
+                STATE.store(INITIALIZED, Ordering::Release);
+                Ok(())
+            }
+            Err(INITIALIZING) => {
+                while STATE.load(Ordering::Relaxed) == INITIALIZING {
+                    std::hint::spin_loop();
+                }
+                Err(SetZkvmHintHookError(()))
+            }
+            _ => Err(SetZkvmHintHookError(())),
+        }
+    }
+}
+
+#[cfg(feature = "zkvm-hint")]
+pub use zkvm_hints::set_zkvm_hint_hook;
+#[cfg(feature = "zkvm-hint")]
+use zkvm_hints::*;
 
 #[cfg(not(feature = "short"))]
 mod chip_long {
@@ -49,6 +98,7 @@ pub trait Hashable: Hashablebase + FromUniformBytes<64> + Ord + ExtraArithmetic 
 
     /// execute hash for any sequence of fields, with domain being specified
     fn hash_with_domain(inp: [Self; 2], domain: Self) -> Self;
+
     /// obtain the rows consumed by each circuit block
     fn hash_block_size() -> usize {
         #[cfg(feature = "short")]
@@ -60,6 +110,7 @@ pub trait Hashable: Hashablebase + FromUniformBytes<64> + Ord + ExtraArithmetic 
             1 + Self::SpecType::full_rounds() + (Self::SpecType::partial_rounds() + 1) / 2
         }
     }
+
     /// init a hasher used for hash
     fn hasher() -> Hash<Self, Self::SpecType, Self::DomainType, 3, 2> {
         Hash::<Self, Self::SpecType, Self::DomainType, 3, 2>::init()
@@ -86,8 +137,37 @@ impl Hashable for Fr {
     type SpecType = HashSpec<Self>;
     type DomainType = ConstantLengthIden3<2>;
 
+    #[cfg(all(target_os = "zkvm", target_vendor = "succinct"))]
     fn hash_with_domain(inp: [Self; 2], domain: Self) -> Self {
+        use sp1_lib::io::read_vec;
+
+        #[cfg(feature = "zkvm-hint")]
+        {
+            use halo2curves::ff::PrimeField;
+            use sp1_lib::io::read_vec;
+
+            return Fr::from_repr_vartime(read_vec().try_into().unwrap()).unwrap();
+        }
+
+        #[cfg(not(feature = "zkvm-hint"))]
         Self::hasher().hash(inp, domain)
+    }
+
+    #[cfg(not(all(target_os = "zkvm", target_vendor = "succinct")))]
+    fn hash_with_domain(inp: [Self; 2], domain: Self) -> Self {
+        let result = Self::hasher().hash(inp, domain);
+        #[cfg(feature = "zkvm-hint")]
+        {
+            use halo2curves::ff::PrimeField;
+            use std::sync::atomic::Ordering;
+            let hook = if STATE.load(Ordering::Acquire) != INITIALIZED {
+                &|_| {}
+            } else {
+                unsafe { ZKVM_HINT_HOOK }
+            };
+            hook(result.to_repr());
+        }
+        result
     }
 }
 
