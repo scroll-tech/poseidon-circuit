@@ -1,5 +1,5 @@
 use std::marker::PhantomData;
-use std::mem::MaybeUninit;
+
 
 use halo2curves::ff::{FromUniformBytes, ExtraArithmetic};
 
@@ -48,6 +48,8 @@ impl<Fp: P128Pow5T3Constants> Spec<Fp, 3, 2> for P128Pow5T3<Fp> {
 
     #[cfg(all(target_os = "zkvm", target_vendor = "succinct"))]
     fn sbox_inplace(val: &mut Fp) {
+        use std::mem::MaybeUninit;
+
         const MEMCPY_32: u32 = 0x00_00_01_30;
         const BN254_SCALAR_MUL: u32 = 0x00_01_01_20;
 

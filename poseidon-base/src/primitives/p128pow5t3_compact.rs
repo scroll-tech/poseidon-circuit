@@ -14,6 +14,7 @@ pub struct P128Pow5T3Compact<Fp> {
 }
 
 impl<Fp: FromUniformBytes<64>> P128Pow5T3Compact<Fp> {
+    #[cfg(all(target_os = "zkvm", target_vendor = "succinct"))]
     fn sbox_naive(val: Fp) -> Fp {
         let mut a = val.clone();
         a.mul_assign(val);

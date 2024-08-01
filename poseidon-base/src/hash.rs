@@ -154,6 +154,7 @@ impl Hashable for Fr {
     }
 
     #[cfg(not(all(target_os = "zkvm", target_vendor = "succinct")))]
+    #[allow(clippy::let_and_return)]
     fn hash_with_domain(inp: [Self; 2], domain: Self) -> Self {
         let result = Self::hasher().hash(inp, domain);
         #[cfg(feature = "zkvm-hint")]
