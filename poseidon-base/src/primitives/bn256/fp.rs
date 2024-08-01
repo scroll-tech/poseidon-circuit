@@ -7,9 +7,7 @@
 // https://extgit.iaik.tugraz.at/krypto/hadeshash/-/blob/b5434fd2b2785926dd1dd386efbef167da57c064/code/poseidonperm_x5_254_3.sage
 //
 
-use halo2curves::{
-    bn256::Fr as Fp,
-};
+use halo2curves::bn256::Fr as Fp;
 use lazy_static::lazy_static;
 
 lazy_static! {

@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use halo2curves::ff::{FromUniformBytes, PrimeField, ExtraArithmetic};
+use halo2curves::ff::{ExtraArithmetic, FromUniformBytes, PrimeField};
 
 use super::p128pow5t3::P128Pow5T3Constants;
 use super::{Mds, Spec};

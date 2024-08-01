@@ -3,7 +3,7 @@
 use std::marker::PhantomData;
 
 use bitvec::prelude::*;
-use halo2curves::ff::{FromUniformBytes, ExtraArithmetic};
+use halo2curves::ff::{ExtraArithmetic, FromUniformBytes};
 
 const STATE: usize = 80;
 
