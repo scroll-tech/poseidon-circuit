@@ -1,4 +1,4 @@
-use halo2curves::ff::{FromUniformBytes, ExtraArithmetic};
+use halo2curves::ff::{ExtraArithmetic, FromUniformBytes};
 
 use super::{grain::Grain, Mds};
 

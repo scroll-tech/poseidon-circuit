@@ -3,7 +3,7 @@
 use std::marker::PhantomData;
 
 use bitvec::prelude::*;
-use halo2curves::ff::{FromUniformBytes, ExtraArithmetic};
+use halo2curves::ff::{ExtraArithmetic, FromUniformBytes};
 
 const STATE: usize = 80;
 
@@ -69,7 +69,7 @@ impl<F: FromUniformBytes<64> + Ord + ExtraArithmetic> Grain<F> {
         let mut grain = Grain {
             state,
             next_bit: STATE,
-            _field: PhantomData::default(),
+            _field: PhantomData,
         };
 
         // Discard the first 160 bits.

@@ -7,10 +7,7 @@
 // https://extgit.iaik.tugraz.at/krypto/hadeshash/-/blob/b5434fd2b2785926dd1dd386efbef167da57c064/code/poseidonperm_x5_254_3.sage
 //
 
-use halo2curves::{
-    bn256::Fr as Fp,
-    group::ff::{Field, PrimeField},
-};
+use halo2curves::bn256::Fr as Fp;
 use lazy_static::lazy_static;
 
 lazy_static! {
@@ -64,6 +61,7 @@ lazy_static! {
     };
 }
 
+#[allow(unused)]
 fn round_constants() -> Vec<&'static str> {
     vec![
         "6745197990210204598374042828761989596302876299545964402857411729872131034734",
@@ -264,6 +262,7 @@ fn round_constants() -> Vec<&'static str> {
     ]
 }
 
+#[allow(unused)]
 fn mds() -> Vec<Vec<&'static str>> {
     vec![
         vec![
@@ -284,6 +283,7 @@ fn mds() -> Vec<Vec<&'static str>> {
     ]
 }
 
+#[allow(unused)]
 fn mds_inv() -> Vec<Vec<&'static str>> {
     vec![
         vec![

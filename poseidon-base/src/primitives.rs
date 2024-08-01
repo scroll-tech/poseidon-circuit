@@ -1,12 +1,14 @@
 //! The Poseidon algebraic hash function.
 
-use std::arch::asm;
 use std::convert::TryInto;
 use std::fmt;
 use std::iter;
 use std::marker::PhantomData;
 
-use halo2curves::ff::{FromUniformBytes, ExtraArithmetic};
+use halo2curves::ff::{ExtraArithmetic, FromUniformBytes};
+
+#[cfg(all(target_os = "zkvm", target_vendor = "succinct"))]
+use std::arch::asm;
 
 pub(crate) mod grain;
 pub(crate) mod mds;
@@ -108,7 +110,10 @@ pub(crate) fn permute<
 
     // here's some assumption for optimization
     // assert [F; T] has same size as F * T (aka. no padding)
-    debug_assert_eq!(core::mem::size_of::<[F; T]>(), core::mem::size_of::<F>() * T);
+    debug_assert_eq!(
+        core::mem::size_of::<[F; T]>(),
+        core::mem::size_of::<F>() * T
+    );
     // assert F is 32 bytes
     debug_assert_eq!(core::mem::size_of::<F>(), 32);
     // assert T is 3
@@ -121,8 +126,10 @@ pub(crate) fn permute<
     debug_assert_eq!(round_constants.len(), 64);
 
     // shared between each apply_mds, since it will be initialized
+    #[cfg(all(target_os = "zkvm", target_vendor = "succinct"))]
     let mut new_state = [state[0]; T];
 
+    #[cfg(all(target_os = "zkvm", target_vendor = "succinct"))]
     let mut apply_mds = |state: &mut State<F, T>| {
         const MEMCPY_32: u32 = 0x00_00_01_30;
         const MEMCPY_64: u32 = 0x00_00_01_31;
@@ -146,7 +153,6 @@ pub(crate) fn permute<
                 new_state[i].mul_add_assign(&state[j], &mds[i][j]);
             }
         }
-
 
         // Copy the new state back to the old state
         unsafe {
@@ -176,14 +182,29 @@ pub(crate) fn permute<
         // }
     };
 
+    #[cfg(not(all(target_os = "zkvm", target_vendor = "succinct")))]
+    let mut apply_mds = |state: &mut State<F, T>| {
+        let mut new_state = [F::ZERO; T];
+        // Matrix multiplication
+        #[allow(clippy::needless_range_loop)]
+        for i in 0..T {
+            for j in 0..T {
+                new_state[i] += mds[i][j] * state[j];
+            }
+        }
+        *state = new_state;
+    };
 
+    #[allow(clippy::needless_range_loop)]
     for i in 0..r_f {
         full_round::<F, S, T, RATE>(state, &round_constants[i], &mut apply_mds);
     }
-    for i in r_f..r_f+r_p {
+    #[allow(clippy::needless_range_loop)]
+    for i in r_f..r_f + r_p {
         partial_round::<F, S, T, RATE>(state, &round_constants[i], &mut apply_mds);
     }
-    for i in r_f+r_p..2*r_f+r_p {
+    #[allow(clippy::needless_range_loop)]
+    for i in r_f + r_p..2 * r_f + r_p {
         full_round::<F, S, T, RATE>(state, &round_constants[i], &mut apply_mds);
     }
 }
@@ -194,7 +215,11 @@ fn full_round<
     S: Spec<F, T, RATE>,
     const T: usize,
     const RATE: usize,
->(state: &mut State<F, T>, rcs: &[F; T], mut apply_mds: impl FnMut(&mut State<F, T>)) {
+>(
+    state: &mut State<F, T>,
+    rcs: &[F; T],
+    mut apply_mds: impl FnMut(&mut State<F, T>),
+) {
     for (word, rc) in state.iter_mut().zip(rcs.iter()) {
         word.add_assign(rc);
         S::sbox_inplace(word);
@@ -208,7 +233,11 @@ fn partial_round<
     S: Spec<F, T, RATE>,
     const T: usize,
     const RATE: usize,
->(state: &mut State<F, T>, rcs: &[F; T], mut apply_mds: impl FnMut(&mut State<F, T>)){
+>(
+    state: &mut State<F, T>,
+    rcs: &[F; T],
+    mut apply_mds: impl FnMut(&mut State<F, T>),
+) {
     for (word, rc) in state.iter_mut().zip(rcs.iter()) {
         word.add_assign(rc);
     }
@@ -294,8 +323,12 @@ pub(crate) struct Sponge<
     _marker: PhantomData<S>,
 }
 
-impl<F: FromUniformBytes<64> + Ord + ExtraArithmetic, S: Spec<F, T, RATE>, const T: usize, const RATE: usize>
-    Sponge<F, S, Absorbing<F, RATE>, T, RATE>
+impl<
+        F: FromUniformBytes<64> + Ord + ExtraArithmetic,
+        S: Spec<F, T, RATE>,
+        const T: usize,
+        const RATE: usize,
+    > Sponge<F, S, Absorbing<F, RATE>, T, RATE>
 {
     /// Constructs a new sponge for the given Poseidon specification.
     pub(crate) fn new(initial_capacity_element: F, layout: usize) -> Self {
@@ -311,7 +344,7 @@ impl<F: FromUniformBytes<64> + Ord + ExtraArithmetic, S: Spec<F, T, RATE>, const
             mds_matrix,
             round_constants,
             layout,
-            _marker: PhantomData::default(),
+            _marker: PhantomData,
         }
     }
 
@@ -354,13 +387,17 @@ impl<F: FromUniformBytes<64> + Ord + ExtraArithmetic, S: Spec<F, T, RATE>, const
             mds_matrix: self.mds_matrix,
             round_constants: self.round_constants,
             layout: self.layout,
-            _marker: PhantomData::default(),
+            _marker: PhantomData,
         }
     }
 }
 
-impl<F: FromUniformBytes<64> + Ord + ExtraArithmetic, S: Spec<F, T, RATE>, const T: usize, const RATE: usize>
-    Sponge<F, S, Squeezing<F, RATE>, T, RATE>
+impl<
+        F: FromUniformBytes<64> + Ord + ExtraArithmetic,
+        S: Spec<F, T, RATE>,
+        const T: usize,
+        const RATE: usize,
+    > Sponge<F, S, Squeezing<F, RATE>, T, RATE>
 {
     /// Squeezes an element from the sponge.
     pub(crate) fn squeeze(&mut self) -> F {
@@ -410,8 +447,8 @@ pub trait Domain<F: FromUniformBytes<64> + Ord + ExtraArithmetic, const RATE: us
 #[derive(Clone, Copy, Debug)]
 pub struct ConstantLength<const L: usize>;
 
-impl<F: FromUniformBytes<64> + Ord + ExtraArithmetic, const RATE: usize, const L: usize> Domain<F, RATE>
-    for ConstantLength<L>
+impl<F: FromUniformBytes<64> + Ord + ExtraArithmetic, const RATE: usize, const L: usize>
+    Domain<F, RATE> for ConstantLength<L>
 {
     type Padding = iter::Take<iter::Repeat<F>>;
 
@@ -440,8 +477,8 @@ impl<F: FromUniformBytes<64> + Ord + ExtraArithmetic, const RATE: usize, const L
 #[derive(Clone, Copy, Debug)]
 pub struct ConstantLengthIden3<const L: usize>;
 
-impl<F: FromUniformBytes<64> + Ord + ExtraArithmetic, const RATE: usize, const L: usize> Domain<F, RATE>
-    for ConstantLengthIden3<L>
+impl<F: FromUniformBytes<64> + Ord + ExtraArithmetic, const RATE: usize, const L: usize>
+    Domain<F, RATE> for ConstantLengthIden3<L>
 {
     type Padding = <ConstantLength<L> as Domain<F, RATE>>::Padding;
 
@@ -467,7 +504,9 @@ impl<F: FromUniformBytes<64> + Ord + ExtraArithmetic, const RATE: usize, const L
 #[derive(Clone, Copy, Debug)]
 pub struct VariableLengthIden3;
 
-impl<F: FromUniformBytes<64> + Ord + ExtraArithmetic, const RATE: usize> Domain<F, RATE> for VariableLengthIden3 {
+impl<F: FromUniformBytes<64> + Ord + ExtraArithmetic, const RATE: usize> Domain<F, RATE>
+    for VariableLengthIden3
+{
     type Padding = <ConstantLength<1> as Domain<F, RATE>>::Padding;
 
     fn name() -> String {
@@ -532,7 +571,7 @@ impl<
     pub fn init() -> Self {
         Hash {
             sponge: Sponge::new(D::initial_capacity_element(), D::layout(T)),
-            _domain: PhantomData::default(),
+            _domain: PhantomData,
         }
     }
 
@@ -584,8 +623,12 @@ impl<
     }
 }
 
-impl<F: FromUniformBytes<64> + Ord + ExtraArithmetic, S: Spec<F, T, RATE>, const T: usize, const RATE: usize>
-    Hash<F, S, VariableLengthIden3, T, RATE>
+impl<
+        F: FromUniformBytes<64> + Ord + ExtraArithmetic,
+        S: Spec<F, T, RATE>,
+        const T: usize,
+        const RATE: usize,
+    > Hash<F, S, VariableLengthIden3, T, RATE>
 {
     /// Hashes the given input.
     pub fn hash_with_cap(mut self, message: &[F], cap: u128) -> F {
