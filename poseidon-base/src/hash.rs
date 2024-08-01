@@ -47,9 +47,9 @@ mod zkvm_hints {
 }
 
 #[cfg(feature = "zkvm-hint")]
-use zkvm_hints::*;
-#[cfg(feature = "zkvm-hint")]
 pub use zkvm_hints::set_zkvm_hint_hook;
+#[cfg(feature = "zkvm-hint")]
+use zkvm_hints::*;
 
 #[cfg(not(feature = "short"))]
 mod chip_long {
@@ -137,22 +137,29 @@ impl Hashable for Fr {
     type SpecType = HashSpec<Self>;
     type DomainType = ConstantLengthIden3<2>;
 
+    #[cfg(all(target_os = "zkvm", target_vendor = "succinct"))]
     fn hash_with_domain(inp: [Self; 2], domain: Self) -> Self {
+        use sp1_lib::io::read_vec;
+
         #[cfg(feature = "zkvm-hint")]
         {
             use halo2curves::ff::PrimeField;
             use sp1_lib::io::read_vec;
 
-            return Fr::from_repr_vartime(read_vec().try_into().unwrap()).unwrap()
+            return Fr::from_repr_vartime(read_vec().try_into().unwrap()).unwrap();
         }
 
         #[cfg(not(feature = "zkvm-hint"))]
         Self::hasher().hash(inp, domain)
+    }
+
+    #[cfg(not(all(target_os = "zkvm", target_vendor = "succinct")))]
+    fn hash_with_domain(inp: [Self; 2], domain: Self) -> Self {
         let result = Self::hasher().hash(inp, domain);
         #[cfg(feature = "zkvm-hint")]
         {
-            use std::sync::atomic::Ordering;
             use halo2curves::ff::PrimeField;
+            use std::sync::atomic::Ordering;
             let hook = if STATE.load(Ordering::Acquire) != INITIALIZED {
                 &|_| {}
             } else {
