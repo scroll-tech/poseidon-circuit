@@ -1,12 +1,14 @@
 //! The Poseidon algebraic hash function.
 
-use std::arch::asm;
 use std::convert::TryInto;
 use std::fmt;
 use std::iter;
 use std::marker::PhantomData;
 
 use halo2curves::ff::{FromUniformBytes, ExtraArithmetic};
+
+#[cfg(all(target_os = "zkvm", target_vendor = "succinct"))]
+use std::arch::asm;
 
 pub(crate) mod grain;
 pub(crate) mod mds;
@@ -121,8 +123,10 @@ pub(crate) fn permute<
     debug_assert_eq!(round_constants.len(), 64);
 
     // shared between each apply_mds, since it will be initialized
+    #[cfg(all(target_os = "zkvm", target_vendor = "succinct"))]
     let mut new_state = [state[0]; T];
 
+    #[cfg(all(target_os = "zkvm", target_vendor = "succinct"))]
     let mut apply_mds = |state: &mut State<F, T>| {
         const MEMCPY_32: u32 = 0x00_00_01_30;
         const MEMCPY_64: u32 = 0x00_00_01_31;
@@ -176,13 +180,29 @@ pub(crate) fn permute<
         // }
     };
 
+    #[cfg(not(all(target_os = "zkvm", target_vendor = "succinct")))]
+    let mut apply_mds = |state: &mut State<F, T>| {
+        let mut new_state = [F::ZERO; T];
+        // Matrix multiplication
+        #[allow(clippy::needless_range_loop)]
+        for i in 0..T {
+            for j in 0..T {
+                new_state[i] += mds[i][j] * state[j];
+            }
+        }
+        *state = new_state;
+    };
 
+
+    #[allow(clippy::needless_range_loop)]
     for i in 0..r_f {
         full_round::<F, S, T, RATE>(state, &round_constants[i], &mut apply_mds);
     }
+    #[allow(clippy::needless_range_loop)]
     for i in r_f..r_f+r_p {
         partial_round::<F, S, T, RATE>(state, &round_constants[i], &mut apply_mds);
     }
+    #[allow(clippy::needless_range_loop)]
     for i in r_f+r_p..2*r_f+r_p {
         full_round::<F, S, T, RATE>(state, &round_constants[i], &mut apply_mds);
     }
@@ -311,7 +331,7 @@ impl<F: FromUniformBytes<64> + Ord + ExtraArithmetic, S: Spec<F, T, RATE>, const
             mds_matrix,
             round_constants,
             layout,
-            _marker: PhantomData::default(),
+            _marker: PhantomData
         }
     }
 
@@ -354,7 +374,7 @@ impl<F: FromUniformBytes<64> + Ord + ExtraArithmetic, S: Spec<F, T, RATE>, const
             mds_matrix: self.mds_matrix,
             round_constants: self.round_constants,
             layout: self.layout,
-            _marker: PhantomData::default(),
+            _marker: PhantomData
         }
     }
 }
@@ -532,7 +552,7 @@ impl<
     pub fn init() -> Self {
         Hash {
             sponge: Sponge::new(D::initial_capacity_element(), D::layout(T)),
-            _domain: PhantomData::default(),
+            _domain: PhantomData
         }
     }
 
