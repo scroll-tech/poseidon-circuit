@@ -90,16 +90,7 @@ impl Hashable for Fr {
         #[cfg(feature = "zkvm-hint")]
         {
             use halo2curves::ff::PrimeField;
-
-            #[cfg(feature = "zkvm-hint-scroll")]
             use sp1_lib::io::read_vec;
-            #[cfg(feature = "zkvm-hint-upstream")]
-            use sp1_lib_upstream::io::read_vec;
-            #[cfg(any(
-                all(not(feature = "zkvm-hint-upstream"), not(feature = "zkvm-hint-scroll")),
-                all(feature = "zkvm-hint-upstream", feature = "zkvm-hint-scroll")
-            ))]
-            compile_error!("Exactly one of the `zkvm-hint-upstream` and `zkvm-hint-scroll` features must be enabled");
 
             return Fr::from_repr_vartime(read_vec().try_into().unwrap()).unwrap()
         }
