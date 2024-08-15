@@ -15,7 +15,7 @@ pub(crate) mod mds;
 // mod binops;
 
 pub mod bn256;
-#[cfg(test)]
+#[cfg(any(feature = "test", test))]
 pub mod pasta;
 
 //#[cfg(test)]
@@ -88,7 +88,7 @@ pub trait Spec<F: FromUniformBytes<64> + Ord, const T: usize, const RATE: usize>
 }
 
 /// Runs the Poseidon permutation on the given state.
-pub(crate) fn permute<
+pub fn permute<
     F: FromUniformBytes<64> + Ord,
     S: Spec<F, T, RATE>,
     const T: usize,

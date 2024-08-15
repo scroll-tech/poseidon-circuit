@@ -11,6 +11,7 @@ log.workspace = true
 poseidon-base = { path = "../poseidon-base" }
 rand_xorshift.workspace = true
 rand.workspace = true
+itertools.workspace = true
 
 [features]
 default = ["halo2_proofs/parallel_syn", "short"]
@@ -27,6 +28,7 @@ parallel_syn = ["halo2_proofs/parallel_syn"]
 bencher.workspace = true
 lazy_static.workspace = true
 plotters.workspace = true
+poseidon-base = { path = "../poseidon-base", features = ["test"] }
 rand.workspace = true
 rand_chacha.workspace = true
 subtle.workspace = true
