@@ -8,7 +8,7 @@ lazy_static.workspace = true
 bitvec.workspace = true
 halo2curves.workspace = true
 subtle.workspace = true
-sp1-lib = { git = "https://github.com/scroll-tech/sp1.git", branch = "scroll-dev-0720", optional = true }
+sp1-lib = { git = "https://github.com/scroll-tech/sp1.git", branch = "scroll-dev-0803", optional = true }
 
 [features]
 default = []
