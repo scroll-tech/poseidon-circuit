@@ -186,8 +186,38 @@ impl Hashable for Fr {
 impl MessageHashable for Fr {
     type DomainType = VariableLengthIden3;
 
+    #[cfg(all(target_os = "zkvm", target_vendor = "succinct"))]
     fn hash_msg(msg: &[Self], cap: Option<u128>) -> Self {
+        #[cfg(feature = "zkvm-hint")]
+        {
+            let _ = (msg, cap);
+            use halo2curves::ff::PrimeField;
+            use sp1_lib::io::read_vec;
+
+            return Fr::from_repr_vartime(read_vec().try_into().unwrap()).unwrap();
+        }
+
+        #[cfg(not(feature = "zkvm-hint"))]
         Self::msg_hasher()
             .hash_with_cap(msg, cap.unwrap_or(msg.len() as u128 * HASHABLE_DOMAIN_SPEC))
+    }
+
+    #[cfg(not(all(target_os = "zkvm", target_vendor = "succinct")))]
+    #[allow(clippy::let_and_return)]
+    fn hash_msg(msg: &[Self], cap: Option<u128>) -> Self {
+        let result = Self::msg_hasher()
+            .hash_with_cap(msg, cap.unwrap_or(msg.len() as u128 * HASHABLE_DOMAIN_SPEC));
+        #[cfg(feature = "zkvm-hint")]
+        {
+            use halo2curves::ff::PrimeField;
+            use std::sync::atomic::Ordering;
+            let hook = if STATE.load(Ordering::Acquire) != INITIALIZED {
+                &|_| {}
+            } else {
+                unsafe { ZKVM_HINT_HOOK }
+            };
+            hook(result.to_repr());
+        }
+        result
     }
 }
