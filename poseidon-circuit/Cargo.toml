@@ -29,6 +29,7 @@ lazy_static.workspace = true
 rand.workspace = true
 rand_chacha.workspace = true
 subtle.workspace = true
+poseidon-base = { path = "../poseidon-base", features = ["test"] }
 
 [[bench]]
 name = "hash"
