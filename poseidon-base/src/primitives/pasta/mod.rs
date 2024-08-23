@@ -1,5 +1,6 @@
 use crate::hash::HashSpec;
 use halo2curves::{group::ff::PrimeField, pasta};
+use once_cell::sync::Lazy;
 pub use pasta::pallas;
 pub use pasta::Fp;
 
@@ -7,7 +8,7 @@ pub mod fp;
 pub mod test_vectors;
 
 use crate::primitives::p128pow5t3::P128Pow5T3Constants;
-use crate::primitives::{CachedSpec, Mds};
+use crate::primitives::{CachedSpec, Mds, P128Pow5T3Compact, Spec};
 
 impl P128Pow5T3Constants for Fp {
     fn round_constants() -> Vec<[Self; 3]> {
@@ -22,9 +23,17 @@ impl P128Pow5T3Constants for Fp {
 }
 
 impl CachedSpec<Fp, 3, 2> for HashSpec<Fp> {
+    #[cfg(not(feature = "short"))]
     fn cached_round_constants() -> &'static [[Fp; 3]] {
         &fp::ROUND_CONSTANTS
     }
+
+    #[cfg(feature = "short")]
+    fn cached_round_constants() -> &'static [[Fp; 3]] {
+        static ROUND_CONSTANTS: Lazy<Vec<[Fp; 3]>> = Lazy::new(|| P128Pow5T3Compact::constants().0);
+        &ROUND_CONSTANTS
+    }
+
     fn cached_mds() -> &'static Mds<Fp, 3> {
         &fp::MDS
     }
