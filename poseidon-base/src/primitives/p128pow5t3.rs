@@ -20,7 +20,7 @@ pub trait P128Pow5T3Constants: FromUniformBytes<64> + Ord {
 /// The standard specification for this set of parameters (on either of the Pasta
 /// fields) uses $R_F = 8, R_P = 56$. This is conveniently an even number of
 /// partial rounds, making it easier to construct a Halo 2 circuit.
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct P128Pow5T3<C> {
     _marker: PhantomData<C>,
 }
@@ -47,18 +47,20 @@ impl<Fp: P128Pow5T3Constants> Spec<Fp, 3, 2> for P128Pow5T3<Fp> {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test"))]
+#[allow(unused_imports)]
 mod tests {
     use std::marker::PhantomData;
 
+    use crate::params::Mds;
     use halo2curves::ff::{FromUniformBytes, PrimeField};
 
     use super::super::pasta::{fp, test_vectors, Fp};
-    use crate::primitives::{permute, ConstantLength, Hash, Spec};
+    use crate::primitives::{permute, CachedSpec, ConstantLength, Hash, Spec};
 
     /// The same Poseidon specification as poseidon::P128Pow5T3, but constructed
     /// such that its constants will be generated at runtime.
-    #[derive(Debug)]
+    #[derive(Debug, Copy, Clone)]
     pub struct P128Pow5T3Gen<F: PrimeField, const SECURE_MDS: usize>(PhantomData<F>);
 
     type P128Pow5T3Pasta = super::P128Pow5T3<Fp>;
@@ -86,6 +88,18 @@ mod tests {
 
         fn secure_mds() -> usize {
             SECURE_MDS
+        }
+    }
+
+    impl CachedSpec<Fp, 3, 2> for P128Pow5T3Pasta {
+        fn cached_round_constants() -> &'static [[Fp; 3]] {
+            &fp::ROUND_CONSTANTS
+        }
+        fn cached_mds() -> &'static Mds<Fp> {
+            &fp::MDS
+        }
+        fn cached_mds_inv() -> &'static Mds<Fp> {
+            &fp::MDS_INV
         }
     }
 

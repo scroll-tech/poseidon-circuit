@@ -69,7 +69,7 @@ impl<F: FromUniformBytes<64> + Ord> Grain<F> {
         let mut grain = Grain {
             state,
             next_bit: STATE,
-            _field: PhantomData::default(),
+            _field: PhantomData,
         };
 
         // Discard the first 160 bits.
