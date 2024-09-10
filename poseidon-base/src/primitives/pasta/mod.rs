@@ -42,6 +42,7 @@ impl CachedSpec<Fp, 3, 2> for HashSpec<Fp> {
     }
 }
 
+#[allow(dead_code)]
 fn sqrt_tonelli_shanks<F: PrimeField, S: AsRef<[u64]>>(f: &F, tm1d2: S) -> subtle::CtOption<F> {
     use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 
