@@ -21,7 +21,8 @@ impl P128Pow5T3Constants for Fp {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test"))]
+#[allow(unused_imports)]
 mod tests {
     use std::marker::PhantomData;
 
@@ -31,7 +32,7 @@ mod tests {
 
     /// The same Poseidon specification as poseidon::P128Pow5T3, but constructed
     /// such that its constants will be generated at runtime.
-    #[derive(Debug)]
+    #[derive(Debug, Copy, Clone)]
     pub struct P128Pow5T3Gen<F: P128Pow5T3Constants>(PhantomData<F>);
 
     impl<F: P128Pow5T3Constants> P128Pow5T3Gen<F> {

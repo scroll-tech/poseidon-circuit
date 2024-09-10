@@ -14,7 +14,7 @@ halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.gi
 itertools = "0.13.0" # for compatibility msrv 1.75
 lazy_static = "1.4"
 log = "0.4"
-plotters = "0.3"
+once_cell = "1.19"
 rand = "0.8"
 rand_chacha = "0.3.0"
 rand_xorshift = "0.3"

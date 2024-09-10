@@ -8,7 +8,7 @@ use super::{Mds, Spec};
 /// Poseidon-128 using the $x^5$ S-box, with a width of 3 field elements, and the
 /// standard number of rounds for 128-bit security "with margin".
 ///
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct P128Pow5T3Compact<Fp> {
     _marker: PhantomData<Fp>,
 }

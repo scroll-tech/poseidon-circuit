@@ -15,7 +15,7 @@ pub(crate) mod mds;
 // mod binops;
 
 pub mod bn256;
-#[cfg(any(feature = "test", test))]
+#[cfg(any(test, feature = "test"))]
 pub mod pasta;
 
 //#[cfg(test)]
@@ -41,7 +41,7 @@ pub type Mds<F, const T: usize> = [[F; T]; T];
 
 /// A specification for a Poseidon permutation.
 pub trait Spec<F: FromUniformBytes<64> + Ord, const T: usize, const RATE: usize>:
-    fmt::Debug
+    Copy + fmt::Debug
 {
     /// The number of full rounds for this specification.
     ///
@@ -85,6 +85,14 @@ pub trait Spec<F: FromUniformBytes<64> + Ord, const T: usize, const RATE: usize>
 
         (round_constants, mds, mds_inv)
     }
+}
+
+pub trait CachedSpec<F: FromUniformBytes<64> + Ord, const T: usize, const RATE: usize>:
+    Spec<F, T, RATE>
+{
+    fn cached_round_constants() -> &'static [[F; T]];
+    fn cached_mds() -> &'static Mds<F, T>;
+    fn cached_mds_inv() -> &'static Mds<F, T>;
 }
 
 /// Runs the Poseidon permutation on the given state.
@@ -176,18 +184,18 @@ mod private {
 }
 
 /// The state of the `Sponge`.
-pub trait SpongeMode: private::SealedSpongeMode {}
+pub trait SpongeMode: private::SealedSpongeMode + Clone {}
 
 /// The absorbing state of the `Sponge`.
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct Absorbing<F, const RATE: usize>(pub SpongeRate<F, RATE>);
 
 /// The squeezing state of the `Sponge`.
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct Squeezing<F, const RATE: usize>(pub SpongeRate<F, RATE>);
 
-impl<F, const RATE: usize> SpongeMode for Absorbing<F, RATE> {}
-impl<F, const RATE: usize> SpongeMode for Squeezing<F, RATE> {}
+impl<F: Clone, const RATE: usize> SpongeMode for Absorbing<F, RATE> {}
+impl<F: Clone, const RATE: usize> SpongeMode for Squeezing<F, RATE> {}
 
 impl<F: fmt::Debug, const RATE: usize> Absorbing<F, RATE> {
     pub fn init_with(val: F) -> Self {
@@ -202,28 +210,29 @@ impl<F: fmt::Debug, const RATE: usize> Absorbing<F, RATE> {
 }
 
 /// A Poseidon sponge.
+#[derive(Clone)]
 pub(crate) struct Sponge<
     F: FromUniformBytes<64> + Ord,
-    S: Spec<F, T, RATE>,
+    S: CachedSpec<F, T, RATE>,
     M: SpongeMode,
     const T: usize,
     const RATE: usize,
 > {
     mode: M,
     state: State<F, T>,
-    mds_matrix: Mds<F, T>,
-    round_constants: Vec<[F; T]>,
     layout: usize,
     _marker: PhantomData<S>,
 }
 
-impl<F: FromUniformBytes<64> + Ord, S: Spec<F, T, RATE>, const T: usize, const RATE: usize>
-    Sponge<F, S, Absorbing<F, RATE>, T, RATE>
+impl<
+        F: FromUniformBytes<64> + Ord,
+        S: CachedSpec<F, T, RATE>,
+        const T: usize,
+        const RATE: usize,
+    > Sponge<F, S, Absorbing<F, RATE>, T, RATE>
 {
     /// Constructs a new sponge for the given Poseidon specification.
     pub(crate) fn new(initial_capacity_element: F, layout: usize) -> Self {
-        let (round_constants, mds_matrix, _) = S::constants();
-
         let mode = Absorbing([None; RATE]);
         let mut state = [F::ZERO; T];
         state[(RATE + layout) % T] = initial_capacity_element;
@@ -231,10 +240,8 @@ impl<F: FromUniformBytes<64> + Ord, S: Spec<F, T, RATE>, const T: usize, const R
         Sponge {
             mode,
             state,
-            mds_matrix,
-            round_constants,
             layout,
-            _marker: PhantomData::default(),
+            _marker: PhantomData,
         }
     }
 
@@ -256,8 +263,8 @@ impl<F: FromUniformBytes<64> + Ord, S: Spec<F, T, RATE>, const T: usize, const R
         let _ = poseidon_sponge::<F, S, T, RATE>(
             &mut self.state,
             Some((&self.mode, self.layout)),
-            &self.mds_matrix,
-            &self.round_constants,
+            S::cached_mds(),
+            S::cached_round_constants(),
         );
         self.mode = Absorbing::init_with(value);
     }
@@ -267,23 +274,25 @@ impl<F: FromUniformBytes<64> + Ord, S: Spec<F, T, RATE>, const T: usize, const R
         let mode = poseidon_sponge::<F, S, T, RATE>(
             &mut self.state,
             Some((&self.mode, self.layout)),
-            &self.mds_matrix,
-            &self.round_constants,
+            S::cached_mds(),
+            S::cached_round_constants(),
         );
 
         Sponge {
             mode,
             state: self.state,
-            mds_matrix: self.mds_matrix,
-            round_constants: self.round_constants,
             layout: self.layout,
-            _marker: PhantomData::default(),
+            _marker: PhantomData,
         }
     }
 }
 
-impl<F: FromUniformBytes<64> + Ord, S: Spec<F, T, RATE>, const T: usize, const RATE: usize>
-    Sponge<F, S, Squeezing<F, RATE>, T, RATE>
+impl<
+        F: FromUniformBytes<64> + Ord,
+        S: CachedSpec<F, T, RATE>,
+        const T: usize,
+        const RATE: usize,
+    > Sponge<F, S, Squeezing<F, RATE>, T, RATE>
 {
     /// Squeezes an element from the sponge.
     pub(crate) fn squeeze(&mut self) -> F {
@@ -298,8 +307,8 @@ impl<F: FromUniformBytes<64> + Ord, S: Spec<F, T, RATE>, const T: usize, const R
             self.mode = poseidon_sponge::<F, S, T, RATE>(
                 &mut self.state,
                 None,
-                &self.mds_matrix,
-                &self.round_constants,
+                S::cached_mds(),
+                S::cached_round_constants(),
             );
         }
     }
@@ -413,9 +422,10 @@ impl<F: FromUniformBytes<64> + Ord, const RATE: usize> Domain<F, RATE> for Varia
 }
 
 /// A Poseidon hash function, built around a sponge.
+#[derive(Clone)]
 pub struct Hash<
     F: FromUniformBytes<64> + Ord,
-    S: Spec<F, T, RATE>,
+    S: CachedSpec<F, T, RATE>,
     D: Domain<F, RATE>,
     const T: usize,
     const RATE: usize,
@@ -426,7 +436,7 @@ pub struct Hash<
 
 impl<
         F: FromUniformBytes<64> + Ord,
-        S: Spec<F, T, RATE>,
+        S: CachedSpec<F, T, RATE>,
         D: Domain<F, RATE>,
         const T: usize,
         const RATE: usize,
@@ -445,7 +455,7 @@ impl<
 
 impl<
         F: FromUniformBytes<64> + Ord,
-        S: Spec<F, T, RATE>,
+        S: CachedSpec<F, T, RATE>,
         D: Domain<F, RATE>,
         const T: usize,
         const RATE: usize,
@@ -455,19 +465,19 @@ impl<
     pub fn init() -> Self {
         Hash {
             sponge: Sponge::new(D::initial_capacity_element(), D::layout(T)),
-            _domain: PhantomData::default(),
+            _domain: PhantomData,
         }
     }
 
     /// help permute a state
     pub fn permute(&self, state: &mut [F; T]) {
-        permute::<F, S, T, RATE>(state, &self.sponge.mds_matrix, &self.sponge.round_constants);
+        permute::<F, S, T, RATE>(state, S::cached_mds(), S::cached_round_constants());
     }
 }
 
 impl<
         F: FromUniformBytes<64> + Ord,
-        S: Spec<F, T, RATE>,
+        S: CachedSpec<F, T, RATE>,
         const T: usize,
         const RATE: usize,
         const L: usize,
@@ -487,7 +497,7 @@ impl<
 
 impl<
         F: FromUniformBytes<64> + Ord,
-        S: Spec<F, T, RATE>,
+        S: CachedSpec<F, T, RATE>,
         const T: usize,
         const RATE: usize,
         const L: usize,
@@ -507,8 +517,12 @@ impl<
     }
 }
 
-impl<F: FromUniformBytes<64> + Ord, S: Spec<F, T, RATE>, const T: usize, const RATE: usize>
-    Hash<F, S, VariableLengthIden3, T, RATE>
+impl<
+        F: FromUniformBytes<64> + Ord,
+        S: CachedSpec<F, T, RATE>,
+        const T: usize,
+        const RATE: usize,
+    > Hash<F, S, VariableLengthIden3, T, RATE>
 {
     /// Hashes the given input.
     pub fn hash_with_cap(mut self, message: &[F], cap: u128) -> F {
