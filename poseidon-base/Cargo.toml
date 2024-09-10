@@ -18,3 +18,4 @@ subtle.workspace = true
 default = ["short"]
 short = []
 test = ["subtle"]
+legacy = []

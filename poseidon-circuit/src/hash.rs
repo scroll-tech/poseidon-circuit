@@ -5,7 +5,6 @@ use halo2_proofs::circuit::AssignedCell;
 use halo2_proofs::plonk::Fixed;
 use log;
 use std::time::Instant;
-use itertools::{Itertools, PeekingNext};
 
 #[cfg(not(feature = "short"))]
 mod chip_long {
@@ -808,7 +807,7 @@ where
                 .map(|e| e.get())
                 .unwrap_or(32);
             let min_len = self.calcs / chunks_count + 1;
-
+            let mut chunk_len = 0;
 
             let data: Vec<((Option<&[F; 2]>, Option<&u64>), (Option<&F>, Option<&F>))> = inputs_i
                 .zip(controls_i)
@@ -820,21 +819,13 @@ where
             //
             // Each chunk would be processed in a separate thread.
             let assignments = data
-                .into_iter()
-                .peekable()
-                .batching(|it| {
-                    let mut chunk_len = 0;
-                    let mut chunk = vec![];
-                    while let Some(data) = it.peeking_next(|((_, control), _)| {
-                        chunk_len += 1;
-                        control.copied().unwrap_or(0) <= STEP as u64 || chunk_len < min_len
-                    }) {
-                        chunk.push(data)
-                    }
-                    if chunk.is_empty() {
-                        None
+                .chunk_by(|((_, control), _), _| {
+                    chunk_len += 1;
+                    if control.copied().unwrap_or(0) > STEP as u64 || chunk_len < min_len {
+                        true
                     } else {
-                        Some(chunk)
+                        chunk_len = 0;
+                        false
                     }
                 })
                 .collect::<Vec<_>>();
