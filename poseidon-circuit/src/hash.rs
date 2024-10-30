@@ -807,7 +807,6 @@ where
                 .map(|e| e.get())
                 .unwrap_or(32);
             let min_len = self.calcs / chunks_count + 1;
-            let mut chunk_len = 0;
 
             let data: Vec<((Option<&[F; 2]>, Option<&u64>), (Option<&F>, Option<&F>))> = inputs_i
                 .zip(controls_i)
@@ -818,17 +817,25 @@ where
             // with a new sponge.
             //
             // Each chunk would be processed in a separate thread.
-            let assignments = data
-                .chunk_by(|((_, control), _), _| {
-                    chunk_len += 1;
-                    if control.copied().unwrap_or(0) > STEP as u64 || chunk_len < min_len {
-                        true
-                    } else {
-                        chunk_len = 0;
-                        false
+            let assignments = {
+                let mut cur_chunk_begin = 0;
+                let mut output = Vec::new();
+
+                for (i, ((_, control), _)) in data.iter().enumerate() {
+                    if control.copied().unwrap_or(0) <= STEP as u64
+                        && i - cur_chunk_begin + 1 >= min_len
+                    {
+                        output.push(&data[cur_chunk_begin..=i]);
+                        cur_chunk_begin = i + 1;
                     }
-                })
-                .collect::<Vec<_>>();
+                }
+
+                if cur_chunk_begin < data.len() {
+                    output.push(&data[cur_chunk_begin..]);
+                }
+
+                output
+            };
             let assignments_len = assignments.len();
             let assignments = assignments
                 .into_iter()
