@@ -818,14 +818,20 @@ where
             //
             // Each chunk would be processed in a separate thread.
             let assignments = {
-                let mut cur_chunk_bein = 0;
+                let mut cur_chunk_begin = 0;
                 let mut output = Vec::new();
 
                 for (i, ((_, control), _)) in data.iter().enumerate() {
-                    if control.copied().unwrap_or(0) < STEP as u64 && i - cur_chunk_bein > min_len {
-                        output.push(&data[cur_chunk_bein..i]);
-                        cur_chunk_bein = i;
+                    if control.copied().unwrap_or(0) <= STEP as u64
+                        && i - cur_chunk_begin + 1 >= min_len
+                    {
+                        output.push(&data[cur_chunk_begin..=i]);
+                        cur_chunk_begin = i + 1;
                     }
+                }
+
+                if cur_chunk_begin < data.len() {
+                    output.push(&data[cur_chunk_begin..]);
                 }
 
                 output
